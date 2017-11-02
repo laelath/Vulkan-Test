@@ -6,6 +6,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include "linmath.h"
 #include "vktools.h"
 
 
@@ -73,6 +74,9 @@ struct VulkanData {
     VkSemaphore imageAvailableSemaphore;
     VkSemaphore renderFinishedSemaphore;
 
+    VkBuffer       vertexBuffer;
+    VkDeviceMemory vertexBufferMemory;
+
 #ifdef VALIDATION_LAYERS
     VkDebugReportCallbackEXT callback;
 
@@ -80,6 +84,21 @@ struct VulkanData {
     PFN_vkDestroyDebugReportCallbackEXT fpDestroyDebugReportCallbackEXT;
 #endif // VALIDATION_LAYERS
 } vkData;
+
+
+
+struct Vertex {
+    vec2 pos;
+    vec3 color;
+};
+
+const struct Vertex vertices[] = {
+    // Position    ,  Color
+    {{ 0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{ 0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+const size_t vertexCount = sizeof(vertices) / sizeof(vertices[0]);
 
 
 
@@ -618,12 +637,33 @@ void createGraphicsPipeline()
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
     // Vertex input stuff
+    VkVertexInputBindingDescription bindingDescription = {
+        .binding   = 0,
+        .stride    = sizeof(struct Vertex),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    };
+
+    VkVertexInputAttributeDescription attributeDescriptions[] = {
+        {
+            .binding  = 0,
+            .location = 0,
+            .format   = VK_FORMAT_R32G32_SFLOAT,
+            .offset   = offsetof(struct Vertex, pos),
+        },
+        {
+            .binding  = 0,
+            .location = 1,
+            .format   = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset   = offsetof(struct Vertex, color),
+        },
+    };
+
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
         .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount   = 0,
-        .pVertexBindingDescriptions      = NULL,
-        .vertexAttributeDescriptionCount = 0,
-        .pVertexAttributeDescriptions    = NULL,
+        .vertexBindingDescriptionCount   = 1,
+        .pVertexBindingDescriptions      = &bindingDescription,
+        .vertexAttributeDescriptionCount = sizeof(attributeDescriptions) / sizeof(attributeDescriptions[0]),
+        .pVertexAttributeDescriptions    = attributeDescriptions,
     };
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
@@ -772,6 +812,56 @@ void createCommandPool()
     VK_CHECK(vkCreateCommandPool(vkData.device, &poolInfo, NULL, &vkData.commandPool));
 }
 
+uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(vkData.physicalDevice, &memProperties);
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            return i;
+
+    ERR_EXIT("Unable to find a suitable buffer memory type\n");
+}
+
+void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+                  VkBuffer *buffer, VkDeviceMemory *bufferMemory)
+{
+    VkBufferCreateInfo bufferInfo = {
+        .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size        = size,
+        .usage       = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+
+    VK_CHECK(vkCreateBuffer(vkData.device, &bufferInfo, NULL, &vkData.vertexBuffer));
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(vkData.device, *buffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo = {
+        .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize  = memRequirements.size,
+        .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties),
+    };
+
+    VK_CHECK(vkAllocateMemory(vkData.device, &allocInfo, NULL, bufferMemory));
+    vkBindBufferMemory(vkData.device, *buffer, *bufferMemory, 0);
+}
+
+void createVertexBuffer()
+{
+    VkDeviceSize bufferSize = sizeof(vertices);
+    createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 &vkData.vertexBuffer, &vkData.vertexBufferMemory);
+
+    void *data;
+    vkMapMemory(vkData.device, vkData.vertexBufferMemory, 0, bufferSize, 0, &data);
+    memcpy(data, vertices, sizeof(vertices));
+    vkUnmapMemory(vkData.device, vkData.vertexBufferMemory);
+}
+
 void createCommandBuffers()
 {
     VkCommandBufferAllocateInfo allocInfo = {
@@ -812,6 +902,11 @@ void createCommandBuffers()
         vkCmdBeginRenderPass(vkData.swapchainCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(vkData.swapchainCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                           vkData.graphicsPipeline);
+
+        VkBuffer vertexBuffers[] = {vkData.vertexBuffer};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(vkData.swapchainCommandBuffers[i], 0, 1, vertexBuffers, offsets);
+
         vkCmdDraw(vkData.swapchainCommandBuffers[i], 3, 1, 0, 0);
         vkCmdEndRenderPass(vkData.swapchainCommandBuffers[i]);
 
@@ -852,6 +947,7 @@ void initVulkan()
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
+    createVertexBuffer();
     createCommandBuffers();
 
     createSemaphores();
@@ -1032,6 +1128,9 @@ void cleanupSwapchain()
 void cleanup()
 {
     cleanupSwapchain();
+
+    vkDestroyBuffer(vkData.device, vkData.vertexBuffer, NULL);
+    vkFreeMemory(vkData.device, vkData.vertexBufferMemory, NULL);
 
     vkDestroyShaderModule(vkData.device, shaders.vert, NULL);
     vkDestroyShaderModule(vkData.device, shaders.frag, NULL);
