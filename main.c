@@ -69,6 +69,8 @@ struct VulkanData {
     VkPipelineLayout pipelineLayout;
     VkPipeline       graphicsPipeline;
 
+    VkDescriptorSetLayout descriptorSetLayout;
+
     VkCommandPool commandPool;
 
     VkSemaphore imageAvailableSemaphore;
@@ -78,6 +80,12 @@ struct VulkanData {
     VkDeviceMemory vertexBufferMemory;
     VkBuffer       indexBuffer;
     VkDeviceMemory indexBufferMemory;
+
+    VkBuffer       uniformBuffer;
+    VkDeviceMemory uniformBufferMemory;
+
+    VkDescriptorPool descriptorPool;
+    VkDescriptorSet  descriptorSet;
 
 #ifdef VALIDATION_LAYERS
     VkDebugReportCallbackEXT callback;
@@ -107,6 +115,14 @@ const uint16_t indices[] = {
     0, 1, 2, 2, 3, 0
 };
 const size_t indexCount = sizeof(indices) / sizeof(indices[0]);
+
+
+
+struct VertexTransforms {
+    mat4x4 model;
+    mat4x4 view;
+    mat4x4 proj;
+};
 
 
 
@@ -625,6 +641,25 @@ void loadShaders()
     free(fragShaderCode);
 }
 
+void createDescriptorSetLayout()
+{
+    VkDescriptorSetLayoutBinding transformsLayoutBinding = {
+        .binding            = 0,
+        .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount    = 1,
+        .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = NULL, // Optional
+    };
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {
+        .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings    = &transformsLayoutBinding,
+    };
+
+    VK_CHECK(vkCreateDescriptorSetLayout(vkData.device, &layoutInfo, NULL, &vkData.descriptorSetLayout));
+}
+
 void createGraphicsPipeline()
 {
     // Shader stuff
@@ -711,7 +746,7 @@ void createGraphicsPipeline()
         .polygonMode             = VK_POLYGON_MODE_FILL,
         .lineWidth               = 1.0f,
         .cullMode                = VK_CULL_MODE_BACK_BIT,
-        .frontFace               = VK_FRONT_FACE_CLOCKWISE,
+        .frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthBiasEnable         = VK_FALSE,
         .depthBiasConstantFactor = 0.0f, // Optional
         .depthBiasClamp          = 0.0f, // Optional
@@ -756,8 +791,8 @@ void createGraphicsPipeline()
     // Pipeline layout for uniforms and stuff
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
         .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount         = 0,
-        .pSetLayouts            = NULL,
+        .setLayoutCount         = 1,
+        .pSetLayouts            = &vkData.descriptorSetLayout,
         .pushConstantRangeCount = 0,
         .pPushConstantRanges    = NULL,
     };
@@ -948,6 +983,65 @@ void createIndexBuffer()
     vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
 }
 
+void createUniformBuffer()
+{
+    VkDeviceSize bufferSize = sizeof(struct VertexTransforms);
+    createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 &vkData.uniformBuffer, &vkData.uniformBufferMemory);
+}
+
+void createDescriptorPool()
+{
+    VkDescriptorPoolSize poolSize = {
+        .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo = {
+        .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .poolSizeCount = 1,
+        .pPoolSizes    = &poolSize,
+        .maxSets       = 1,
+    };
+
+    VK_CHECK(vkCreateDescriptorPool(vkData.device, &poolInfo, NULL, &vkData.descriptorPool));
+}
+
+void createDescriptorSet()
+{
+    VkDescriptorSetLayout layouts[] = {vkData.descriptorSetLayout};
+
+    VkDescriptorSetAllocateInfo allocInfo = {
+        .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool     = vkData.descriptorPool,
+        .descriptorSetCount = 1,
+        .pSetLayouts        = layouts,
+    };
+
+    VK_CHECK(vkAllocateDescriptorSets(vkData.device, &allocInfo, &vkData.descriptorSet));
+
+    VkDescriptorBufferInfo bufferInfo = {
+        .buffer = vkData.uniformBuffer,
+        .offset = 0,
+        .range  = sizeof(struct VertexTransforms),
+    };
+
+    VkWriteDescriptorSet descriptorWrite = {
+        .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet           = vkData.descriptorSet,
+        .dstBinding       = 0,
+        .dstArrayElement  = 0,
+        .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount  = 1,
+        .pBufferInfo      = &bufferInfo,
+        .pImageInfo       = NULL, // Optional
+        .pTexelBufferView = NULL, // Optional
+    };
+
+    vkUpdateDescriptorSets(vkData.device, 1, &descriptorWrite, 0, NULL);
+}
+
 void createCommandBuffers()
 {
     VkCommandBufferAllocateInfo allocInfo = {
@@ -995,6 +1089,9 @@ void createCommandBuffers()
 
         vkCmdBindIndexBuffer(vkData.swapchainCommandBuffers[i], vkData.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
+        vkCmdBindDescriptorSets(vkData.swapchainCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                vkData.pipelineLayout, 0, 1, &vkData.descriptorSet, 0, NULL);
+
         vkCmdDrawIndexed(vkData.swapchainCommandBuffers[i], indexCount, 1, 0, 0, 0);
         vkCmdEndRenderPass(vkData.swapchainCommandBuffers[i]);
 
@@ -1032,6 +1129,7 @@ void initVulkan()
     createRenderPass();
 
     loadShaders();
+    createDescriptorSetLayout();
 
     // Swapchain things
     createGraphicsPipeline();
@@ -1041,6 +1139,10 @@ void initVulkan()
 
     createVertexBuffer();
     createIndexBuffer();
+    createUniformBuffer();
+
+    createDescriptorPool();
+    createDescriptorSet();
 
     // Swapchain things
     createCommandBuffers();
@@ -1135,6 +1237,29 @@ void initWindow()
 
 
 
+void updateUniformBuffer()
+{
+    double time = glfwGetTime();
+
+    struct VertexTransforms mats;
+    mat4x4_identity(mats.model);
+    mat4x4_rotate_Z(mats.model, mats.model, time * (2 * M_PI) / 15.0f);
+
+    vec3 eye = {2.0f, 2.0f, 2.0f}, center = {0.0f, 0.0f, 0.0f}, up = {0.0f, 0.0f, 1.0f};
+
+    mat4x4_look_at(mats.view, eye, center, up);
+
+    float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
+    mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 10.0f);
+
+    mats.proj[1][1] *= -1;
+
+    void *data;
+    vkMapMemory(vkData.device, vkData.uniformBufferMemory, 0, sizeof(mats), 0, &data);
+    memcpy(data, &mats, sizeof(mats));
+    vkUnmapMemory(vkData.device, vkData.uniformBufferMemory);
+}
+
 void renderFrame()
 {
     // QueueWaitIdle is here before rendering so the CPU doesn't wait while the
@@ -1190,6 +1315,7 @@ void mainLoop()
 
         // process state stuff here if there ever is any
 
+        updateUniformBuffer();
         renderFrame();
     }
 
@@ -1223,6 +1349,12 @@ void cleanupSwapchain()
 void cleanup()
 {
     cleanupSwapchain();
+
+    vkDestroyDescriptorPool(vkData.device, vkData.descriptorPool, NULL);
+
+    vkDestroyDescriptorSetLayout(vkData.device, vkData.descriptorSetLayout, NULL);
+    vkDestroyBuffer(vkData.device, vkData.uniformBuffer, NULL);
+    vkFreeMemory(vkData.device, vkData.uniformBufferMemory, NULL);
 
     vkDestroyBuffer(vkData.device, vkData.indexBuffer, NULL);
     vkFreeMemory(vkData.device, vkData.indexBufferMemory, NULL);

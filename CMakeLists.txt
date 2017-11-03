@@ -7,4 +7,4 @@ find_package (Vulkan REQUIRED)
 file (GLOB SOURCES *.c)
 add_executable (vulkan-test ${SOURCES})
 
-target_link_libraries (vulkan-test glfw vulkan)
+target_link_libraries (vulkan-test glfw vulkan m)
