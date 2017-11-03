@@ -6,7 +6,11 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include "linmath.h"
+#include <linmath.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #include "vktools.h"
 
 
@@ -84,6 +88,9 @@ struct VulkanData {
     VkBuffer       uniformBuffer;
     VkDeviceMemory uniformBufferMemory;
 
+    VkImage        textureImage;
+    VkDeviceMemory textureImageMemory;
+
     VkDescriptorPool descriptorPool;
     VkDescriptorSet  descriptorSet;
 
@@ -122,7 +129,7 @@ struct VertexTransforms {
     mat4x4 model;
     mat4x4 view;
     mat4x4 proj;
-};
+} mats;
 
 
 
@@ -855,82 +862,47 @@ void createCommandPool()
     VK_CHECK(vkCreateCommandPool(vkData.device, &poolInfo, NULL, &vkData.commandPool));
 }
 
-uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+void createTextureImage()
 {
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(vkData.physicalDevice, &memProperties);
+    int texWidth, texHeight, texChannels;
+    stbi_uc *pixels = stbi_load("textures/steamsad_santa.png", &texWidth, &texHeight, &texChannels,
+                                STBI_rgb_alpha);
 
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
-        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-            return i;
+    if (!pixels)
+        ERR_EXIT("Unable to load texture image\n");
 
-    ERR_EXIT("Unable to find a suitable buffer memory type\n");
-}
+    VkDeviceSize imageSize = texWidth * texHeight * 4;
 
-void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-                  VkBuffer *buffer, VkDeviceMemory *bufferMemory)
-{
-    VkBufferCreateInfo bufferInfo = {
-        .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size        = size,
-        .usage       = usage,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
+    VkBuffer       stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    createBuffer(vkData.physicalDevice, vkData.device, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 &stagingBuffer, &stagingBufferMemory);
 
-    VK_CHECK(vkCreateBuffer(vkData.device, &bufferInfo, NULL, buffer));
+    void *data;
+    vkMapMemory(vkData.device, stagingBufferMemory, 0, imageSize, 0, &data);
+    memcpy(data, pixels, imageSize);
+    vkUnmapMemory(vkData.device, stagingBufferMemory);
 
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(vkData.device, *buffer, &memRequirements);
+    stbi_image_free(pixels);
 
-    VkMemoryAllocateInfo allocInfo = {
-        .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize  = memRequirements.size,
-        .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties),
-    };
+    createImage(vkData.physicalDevice, vkData.device, texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vkData.textureImage, &vkData.textureImageMemory);
 
-    VK_CHECK(vkAllocateMemory(vkData.device, &allocInfo, NULL, bufferMemory));
-    vkBindBufferMemory(vkData.device, *buffer, *bufferMemory, 0);
-}
+    transitionImageLayout(vkData.device, vkData.commandPool, vkData.graphicsQueue, vkData.textureImage,
+                          VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
-{
-    VkCommandBufferAllocateInfo allocInfo = {
-        .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandPool        = vkData.commandPool,
-        .commandBufferCount = 1,
-    };
+    copyBufferToImage(vkData.device, vkData.commandPool, vkData.graphicsQueue,
+                      stagingBuffer, vkData.textureImage, texWidth, texHeight);
 
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(vkData.device, &allocInfo, &commandBuffer);
+    transitionImageLayout(vkData.device, vkData.commandPool, vkData.graphicsQueue, vkData.textureImage,
+                          VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    VkCommandBufferBeginInfo beginInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    VkBufferCopy copyRegion = {
-        .srcOffset = 0,
-        .dstOffset = 0,
-        .size      = size,
-    };
-
-    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-    vkEndCommandBuffer(commandBuffer);
-
-    VkSubmitInfo submitInfo = {
-        .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1,
-        .pCommandBuffers    = &commandBuffer,
-    };
-
-    vkQueueSubmit(vkData.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(vkData.graphicsQueue);
-
-    vkFreeCommandBuffers(vkData.device, vkData.commandPool, 1, &commandBuffer);
+    vkDestroyBuffer(vkData.device, stagingBuffer, NULL);
+    vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
 }
 
 void createVertexBuffer()
@@ -939,7 +911,7 @@ void createVertexBuffer()
 
     VkBuffer       stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    createBuffer(vkData.physicalDevice, vkData.device, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  &stagingBuffer, &stagingBufferMemory);
 
@@ -948,11 +920,13 @@ void createVertexBuffer()
     memcpy(data, vertices, bufferSize);
     vkUnmapMemory(vkData.device, stagingBufferMemory);
 
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    createBuffer(vkData.physicalDevice, vkData.device, bufferSize,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                  &vkData.vertexBuffer, &vkData.vertexBufferMemory);
 
-    copyBuffer(stagingBuffer, vkData.vertexBuffer, bufferSize);
+    copyBuffer(vkData.device, vkData.commandPool, vkData.graphicsQueue,
+               stagingBuffer, vkData.vertexBuffer, bufferSize);
 
     vkDestroyBuffer(vkData.device, stagingBuffer, NULL);
     vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
@@ -964,7 +938,7 @@ void createIndexBuffer()
 
     VkBuffer       stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    createBuffer(vkData.physicalDevice, vkData.device, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  &stagingBuffer, &stagingBufferMemory);
 
@@ -973,11 +947,13 @@ void createIndexBuffer()
     memcpy(data, indices, bufferSize);
     vkUnmapMemory(vkData.device, stagingBufferMemory);
 
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    createBuffer(vkData.physicalDevice, vkData.device, bufferSize,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                  &vkData.indexBuffer, &vkData.indexBufferMemory);
 
-    copyBuffer(stagingBuffer, vkData.indexBuffer, bufferSize);
+    copyBuffer(vkData.device, vkData.commandPool, vkData.graphicsQueue,
+               stagingBuffer, vkData.indexBuffer, bufferSize);
 
     vkDestroyBuffer(vkData.device, stagingBuffer, NULL);
     vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
@@ -986,7 +962,7 @@ void createIndexBuffer()
 void createUniformBuffer()
 {
     VkDeviceSize bufferSize = sizeof(struct VertexTransforms);
-    createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+    createBuffer(vkData.physicalDevice, vkData.device, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  &vkData.uniformBuffer, &vkData.uniformBufferMemory);
 }
@@ -1137,6 +1113,8 @@ void initVulkan()
 
     createCommandPool();
 
+    createTextureImage();
+
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffer();
@@ -1172,6 +1150,12 @@ void recreateSwapchain()
     createGraphicsPipeline();
     createFramebuffers();
     createCommandBuffers();
+
+    // TODO: Temporary update for projection matrix
+    float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
+    mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 10.0f);
+    mats.proj[1][1] *= -1;
+    // End TODO
 
     vkQueueWaitIdle(vkData.presentQueue);
 
@@ -1214,7 +1198,7 @@ void windowResizeCallback(GLFWwindow *window, int width, int height)
         return;
     windowWidth = width;
     windowHeight = height;
-    recreateSwapchain();
+    //recreateSwapchain();
 }
 
 void initWindow()
@@ -1237,22 +1221,23 @@ void initWindow()
 
 
 
-void updateUniformBuffer()
+void initMats()
 {
-    double time = glfwGetTime();
-
-    struct VertexTransforms mats;
     mat4x4_identity(mats.model);
-    mat4x4_rotate_Z(mats.model, mats.model, time * (2 * M_PI) / 15.0f);
 
     vec3 eye = {2.0f, 2.0f, 2.0f}, center = {0.0f, 0.0f, 0.0f}, up = {0.0f, 0.0f, 1.0f};
-
     mat4x4_look_at(mats.view, eye, center, up);
 
     float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
     mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 10.0f);
-
     mats.proj[1][1] *= -1;
+}
+
+
+
+void updateUniformBuffer(double delta)
+{
+    mat4x4_rotate_Z(mats.model, mats.model, delta * (2 * M_PI) / 15.0f);
 
     void *data;
     vkMapMemory(vkData.device, vkData.uniformBufferMemory, 0, sizeof(mats), 0, &data);
@@ -1278,26 +1263,26 @@ void renderFrame()
     VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSubmitInfo submitInfo = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &vkData.imageAvailableSemaphore,
-        .pWaitDstStageMask = &waitStages,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &vkData.swapchainCommandBuffers[imageIndex],
+        .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .waitSemaphoreCount   = 1,
+        .pWaitSemaphores      = &vkData.imageAvailableSemaphore,
+        .pWaitDstStageMask    = &waitStages,
+        .commandBufferCount   = 1,
+        .pCommandBuffers      = &vkData.swapchainCommandBuffers[imageIndex],
         .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &vkData.renderFinishedSemaphore,
+        .pSignalSemaphores    = &vkData.renderFinishedSemaphore,
     };
 
     VK_CHECK(vkQueueSubmit(vkData.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 
     VkPresentInfoKHR presentInfo = {
-        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &vkData.renderFinishedSemaphore,
-        .swapchainCount = 1,
-        .pSwapchains = &vkData.swapchain,
-        .pImageIndices = &imageIndex,
-        .pResults = NULL, // Optional
+        .pWaitSemaphores    = &vkData.renderFinishedSemaphore,
+        .swapchainCount     = 1,
+        .pSwapchains        = &vkData.swapchain,
+        .pImageIndices      = &imageIndex,
+        .pResults           = NULL, // Optional
     };
 
     result = vkQueuePresentKHR(vkData.presentQueue, &presentInfo);
@@ -1310,12 +1295,17 @@ void renderFrame()
 
 void mainLoop()
 {
+    double prevTime = glfwGetTime();
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
+        double currTime = glfwGetTime();
+        double delta = currTime - prevTime;
+        prevTime = currTime;
+
         // process state stuff here if there ever is any
 
-        updateUniformBuffer();
+        updateUniformBuffer(delta);
         renderFrame();
     }
 
@@ -1349,6 +1339,9 @@ void cleanupSwapchain()
 void cleanup()
 {
     cleanupSwapchain();
+
+    vkDestroyImage(vkData.device, vkData.textureImage, NULL);
+    vkFreeMemory(vkData.device, vkData.textureImageMemory, NULL);
 
     vkDestroyDescriptorPool(vkData.device, vkData.descriptorPool, NULL);
 
@@ -1389,6 +1382,8 @@ int main(int argc, char *argv[])
 {
     initWindow();
     initVulkan();
+
+    initMats();
 
     mainLoop();
 
