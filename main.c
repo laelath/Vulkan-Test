@@ -43,18 +43,19 @@ struct ShaderCache {
 
 struct VulkanData {
     // Core Vulkan stuff
-    VkInstance       instance;
-    VkPhysicalDevice physicalDevice;
-    VkDevice         device;
-    VkQueue          graphicsQueue;
-    VkQueue          presentQueue;
+    VkInstance                 instance;
+    VkPhysicalDevice           physicalDevice;
+    VkPhysicalDeviceProperties physicalDeviceProps;
+    VkDevice                   device;
+    VkQueue                    graphicsQueue;
+    VkQueue                    presentQueue;
 
     // Queue indicies
     int graphicsFamily;
     int presentFamily;
 
     // WSI stuff
-    VkSurfaceKHR             surface;
+    VkSurfaceKHR surface;
 
     // Swapchain stuff
     VkExtent2D               swapchainImageExtent;
@@ -88,12 +89,13 @@ struct VulkanData {
     VkImageView    depthImageView;
 
     // Multisample buffers
-    VkImage        msImage;
-    VkDeviceMemory msImageMemory;
-    VkImageView    msImageView;
-    VkImage        msDepthImage;
-    VkDeviceMemory msDepthImageMemory;
-    VkImageView    msDepthImageView;
+    VkSampleCountFlags samples;
+    VkImage            msImage;
+    VkDeviceMemory     msImageMemory;
+    VkImageView        msImageView;
+    VkImage            msDepthImage;
+    VkDeviceMemory     msDepthImageMemory;
+    VkImageView        msDepthImageView;
 
     // Vertex and index buffers
     VkBuffer       vertexBuffer;
@@ -393,6 +395,8 @@ void pickPhysicalDevice()
             continue;
 
         vkData.physicalDevice = physicalDevices[i];
+        vkGetPhysicalDeviceProperties(physicalDevices[i], &vkData.physicalDeviceProps);
+
         vkData.graphicsFamily = graphicsFamily;
         vkData.presentFamily  = presentFamily;
         break;
@@ -448,6 +452,20 @@ void createLogicalDevice()
 
     vkGetDeviceQueue(vkData.device, vkData.graphicsFamily, 0, &vkData.graphicsQueue);
     vkGetDeviceQueue(vkData.device, vkData.presentFamily, 0, &vkData.presentQueue);
+}
+
+void getMultisampleCount()
+{
+    VkSampleCountFlags colorSamples = vkData.physicalDeviceProps.limits.framebufferColorSampleCounts;
+    VkSampleCountFlags depthSamples = vkData.physicalDeviceProps.limits.framebufferDepthSampleCounts;
+
+    VkSampleCountFlags samples = colorSamples > depthSamples ? depthSamples : colorSamples;
+
+    if (samples & VK_SAMPLE_COUNT_16_BIT) vkData.samples = VK_SAMPLE_COUNT_16_BIT;
+    else if (samples & VK_SAMPLE_COUNT_8_BIT) vkData.samples = VK_SAMPLE_COUNT_8_BIT;
+    else if (samples & VK_SAMPLE_COUNT_4_BIT) vkData.samples = VK_SAMPLE_COUNT_4_BIT;
+    else if (samples & VK_SAMPLE_COUNT_2_BIT) vkData.samples = VK_SAMPLE_COUNT_2_BIT;
+    else vkData.samples = VK_SAMPLE_COUNT_1_BIT;
 }
 
 VkExtent2D selectExtent(VkSurfaceCapabilitiesKHR capabilities)
@@ -600,7 +618,7 @@ void createRenderPass()
     VkAttachmentDescription attachments[] = {
         { // Multisample render target
             .format         = vkData.swapchainImageFormat.format,
-            .samples        = VK_SAMPLE_COUNT_16_BIT,
+            .samples        = vkData.samples,
             .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
@@ -618,7 +636,7 @@ void createRenderPass()
             .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
         }, { // Multisampled depth buffer
             .format         = depthFormat,
-            .samples        = VK_SAMPLE_COUNT_16_BIT,
+            .samples        = vkData.samples,
             .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
@@ -851,7 +869,7 @@ void createGraphicsPipeline()
     VkPipelineMultisampleStateCreateInfo multisampling = {
         .sType                 = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .sampleShadingEnable   = VK_FALSE,
-        .rasterizationSamples  = VK_SAMPLE_COUNT_16_BIT,
+        .rasterizationSamples  = vkData.samples,
         .minSampleShading      = 1.0f, // Optional
         .pSampleMask           = NULL, // Optional
         .alphaToCoverageEnable = VK_FALSE, // Optional
@@ -969,7 +987,7 @@ void createMultisampleTarget()
                 vkData.swapchainImageExtent.width, vkData.swapchainImageExtent.height,
                 vkData.swapchainImageFormat.format, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                VK_SAMPLE_COUNT_16_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                vkData.samples, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                 &vkData.msImage, &vkData.msImageMemory);
 
     vkData.msImageView = createImageView(vkData.device, vkData.msImage,
@@ -979,7 +997,7 @@ void createMultisampleTarget()
                 vkData.swapchainImageExtent.width, vkData.swapchainImageExtent.height,
                 vkData.depthFormat, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                VK_SAMPLE_COUNT_16_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                vkData.samples, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                 &vkData.msDepthImage, &vkData.msDepthImageMemory);
 
     vkData.msDepthImageView = createImageView(vkData.device, vkData.msDepthImage,
@@ -1307,6 +1325,8 @@ void initVulkan()
     pickPhysicalDevice();
     createLogicalDevice();
 
+    getMultisampleCount();
+
     // Swapchain things
     createSwapchain(VK_NULL_HANDLE);
     createImageViews();
@@ -1362,11 +1382,19 @@ void recreateSwapchain()
     VkImage        oldDepthImage       = vkData.depthImage;
     VkDeviceMemory oldDepthImageMemory = vkData.depthImageMemory;
 
+    VkImage        oldMsImage            = vkData.msImage;
+    VkDeviceMemory oldMsImageMemory      = vkData.msImageMemory;
+    VkImageView    oldMsImageView        = vkData.msImageView;
+    VkImage        oldMsDepthImage       = vkData.msDepthImage;
+    VkDeviceMemory oldMsDepthImageMemory = vkData.msDepthImageMemory;
+    VkImageView    oldMsDepthImageView   = vkData.msDepthImageView;
+
     createSwapchain(oldSwapchain);
     createImageViews();
     createRenderPass();
     createGraphicsPipeline();
     createDepthResources();
+    createMultisampleTarget();
     createFramebuffers();
     createCommandBuffers();
 
@@ -1381,6 +1409,13 @@ void recreateSwapchain()
     vkDestroyImageView(vkData.device, oldDepthImageView, NULL);
     vkDestroyImage(vkData.device, oldDepthImage, NULL);
     vkFreeMemory(vkData.device, oldDepthImageMemory, NULL);
+
+    vkDestroyImageView(vkData.device, oldMsImageView, NULL);
+    vkDestroyImage(vkData.device, oldMsImage, NULL);
+    vkFreeMemory(vkData.device, oldMsImageMemory, NULL);
+    vkDestroyImageView(vkData.device, oldMsDepthImageView, NULL);
+    vkDestroyImage(vkData.device, oldMsDepthImage, NULL);
+    vkFreeMemory(vkData.device, oldMsDepthImageMemory, NULL);
 
     vkFreeCommandBuffers(vkData.device, vkData.commandPool, oldImageCount, oldCommandBuffers);
     free(oldCommandBuffers);
@@ -1540,6 +1575,13 @@ void cleanupSwapchain()
     vkDestroyImageView(vkData.device, vkData.depthImageView, NULL);
     vkDestroyImage(vkData.device, vkData.depthImage, NULL);
     vkFreeMemory(vkData.device, vkData.depthImageMemory, NULL);
+
+    vkDestroyImageView(vkData.device, vkData.msImageView, NULL);
+    vkDestroyImage(vkData.device, vkData.msImage, NULL);
+    vkFreeMemory(vkData.device, vkData.msImageMemory, NULL);
+    vkDestroyImageView(vkData.device, vkData.msDepthImageView, NULL);
+    vkDestroyImage(vkData.device, vkData.msDepthImage, NULL);
+    vkFreeMemory(vkData.device, vkData.msDepthImageMemory, NULL);
 
     vkFreeCommandBuffers(vkData.device, vkData.commandPool, vkData.swapchainImageCount,
                          vkData.swapchainCommandBuffers);
