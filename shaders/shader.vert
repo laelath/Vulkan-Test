@@ -7,16 +7,19 @@ layout(binding = 0) uniform Transforms {
     mat4 proj;
 } mats;
 
-layout(location = 0) in vec2 inPosition;
+layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inColor;
+layout(location = 2) in vec2 inTexCoord;
 
 layout(location = 0) out vec3 fragColor;
+layout(location = 1) out vec2 fragTexCoord;
 
 out gl_PerVertex {
     vec4 gl_Position;
 };
 
 void main() {
-    gl_Position = mats.proj * mats.view * mats.model * vec4(inPosition, 0.0, 1.0);
-    fragColor   = inColor;
+    gl_Position = mats.proj * mats.view * mats.model * vec4(inPosition, 1.0);
+    fragColor = inColor;
+    fragTexCoord = inTexCoord;
 }

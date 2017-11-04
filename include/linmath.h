@@ -372,18 +372,30 @@ static inline void mat4x4_perspective(mat4x4 m, float y_fov, float aspect, float
 	m[0][3] = 0.f;
 
 	m[1][0] = 0.f;
+#ifdef LINMATH_VULKAN_PROJECTIONS
+	m[1][1] = -a;
+#else
 	m[1][1] = a;
+#endif // LINMATH_VULKAN_PROJECTIONS
 	m[1][2] = 0.f;
 	m[1][3] = 0.f;
 
 	m[2][0] = 0.f;
 	m[2][1] = 0.f;
+#ifdef LINMATH_VULKAN_PROJECTIONS
+	m[2][2] = -(f / (f - n));
+#else
 	m[2][2] = -((f + n) / (f - n));
+#endif // LINMATH_VULKAN_PROJECTIONS
 	m[2][3] = -1.f;
 
 	m[3][0] = 0.f;
 	m[3][1] = 0.f;
+#ifdef LINMATH_VULKAN_PROJECTIONS
+	m[3][2] = -((f * n) / (f - n));
+#else
 	m[3][2] = -((2.f * f * n) / (f - n));
+#endif // LINMATH_VULKAN_PROJECTIONS
 	m[3][3] = 0.f;
 }
 static inline void mat4x4_look_at(mat4x4 m, vec3 eye, vec3 center, vec3 up)

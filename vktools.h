@@ -32,9 +32,16 @@ void transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue q
 void copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQueue queue,
                        VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
+VkImageView createImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
 
+VkFormat findSupportedFormat(VkPhysicalDevice, const VkFormat *candidates, size_t numCandidates,
+                             VkImageTiling tiling, VkFormatFeatureFlags features);
 
-char * getFile(const char * fileName, size_t * length);
+bool hasStencilComponent(VkFormat format);
+
+VkFormat findDepthFormat(VkPhysicalDevice physicalDevice);
+
+char * getFile(const char *fileName, size_t *length);
 
 #define ERR_EXIT(err_msg...) \
 { \
