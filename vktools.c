@@ -135,7 +135,7 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue queue,
 }
 
 void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t width, uint32_t height,
-                 VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+                 VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkSampleCountFlagBits samples,
                  VkMemoryPropertyFlags properties, VkImage *image, VkDeviceMemory *imageMemory)
 {
     VkImageCreateInfo imageInfo = {
@@ -153,7 +153,7 @@ void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t widt
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .usage         = usage,
         .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
-        .samples       = VK_SAMPLE_COUNT_1_BIT,
+        .samples       = samples,
         .flags         = 0, // Optional
     };
 

@@ -82,9 +82,18 @@ struct VulkanData {
     VkSemaphore renderFinishedSemaphore;
 
     // Depth buffer data
+    VkFormat       depthFormat;
     VkImage        depthImage;
     VkDeviceMemory depthImageMemory;
     VkImageView    depthImageView;
+
+    // Multisample buffers
+    VkImage        msImage;
+    VkDeviceMemory msImageMemory;
+    VkImageView    msImageView;
+    VkImage        msDepthImage;
+    VkDeviceMemory msDepthImageMemory;
+    VkImageView    msDepthImageView;
 
     // Vertex and index buffers
     VkBuffer       vertexBuffer;
@@ -585,15 +594,47 @@ void createImageViews()
 
 void createRenderPass()
 {
-    VkAttachmentDescription colorAttachment = {
-        .format         = vkData.swapchainImageFormat.format,
-        .samples        = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+    // TODO: Properly find and save the depth format rather than calling this function several times
+    VkFormat depthFormat = findDepthFormat(vkData.physicalDevice);
+
+    VkAttachmentDescription attachments[] = {
+        { // Multisample render target
+            .format         = vkData.swapchainImageFormat.format,
+            .samples        = VK_SAMPLE_COUNT_16_BIT,
+            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        }, { // Image to be resolved to for presenting
+            .format         = vkData.swapchainImageFormat.format,
+            .samples        = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        }, { // Multisampled depth buffer
+            .format         = depthFormat,
+            .samples        = VK_SAMPLE_COUNT_16_BIT,
+            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        }, { // Resolved depth buffer
+            .format         = depthFormat,
+            .samples        = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        }
     };
 
     VkAttachmentReference colorAttachmentRef = {
@@ -601,39 +642,44 @@ void createRenderPass()
         .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     };
 
-    VkAttachmentDescription depthAttachment = {
-        .format         = findDepthFormat(vkData.physicalDevice),
-        .samples        = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    VkAttachmentReference depthAttachmentRef = {
+        .attachment = 2,
+        .layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
     };
 
-    VkAttachmentReference depthAttachmentRef = {
+    // For resolving the color attachment
+    VkAttachmentReference resolveAttachmentRef = {
         .attachment = 1,
-        .layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     };
 
     VkSubpassDescription subpass = {
         .pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount    = 1,
         .pColorAttachments       = &colorAttachmentRef,
+        .pResolveAttachments     = &resolveAttachmentRef,
         .pDepthStencilAttachment = &depthAttachmentRef
     };
 
-    VkSubpassDependency dependency = {
-        .srcSubpass    = VK_SUBPASS_EXTERNAL,
-        .dstSubpass    = 0,
-        .srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .srcAccessMask = 0,
-        .dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+    VkSubpassDependency dependencies[] = {
+        {
+            .srcSubpass      = VK_SUBPASS_EXTERNAL,
+            .dstSubpass      = 0,
+            .srcStageMask    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            .dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask   = VK_ACCESS_MEMORY_READ_BIT,
+            .dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT
+        }, {
+            .srcSubpass      = 0,
+            .dstSubpass      = VK_SUBPASS_EXTERNAL,
+            .srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstStageMask    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            .srcAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask   = VK_ACCESS_MEMORY_READ_BIT,
+            .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT
+        }
     };
-
-    VkAttachmentDescription attachments[] = {colorAttachment, depthAttachment};
 
     VkRenderPassCreateInfo renderPassInfo = {
         .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
@@ -641,8 +687,8 @@ void createRenderPass()
         .pAttachments    = attachments,
         .subpassCount    = 1,
         .pSubpasses      = &subpass,
-        .dependencyCount = 1,
-        .pDependencies   = &dependency
+        .dependencyCount = sizeof(dependencies) / sizeof(dependencies[0]),
+        .pDependencies   = dependencies
     };
 
     VK_CHECK(vkCreateRenderPass(vkData.device, &renderPassInfo, NULL, &vkData.renderPass));
@@ -805,7 +851,7 @@ void createGraphicsPipeline()
     VkPipelineMultisampleStateCreateInfo multisampling = {
         .sType                 = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .sampleShadingEnable   = VK_FALSE,
-        .rasterizationSamples  = VK_SAMPLE_COUNT_1_BIT,
+        .rasterizationSamples  = VK_SAMPLE_COUNT_16_BIT,
         .minSampleShading      = 1.0f, // Optional
         .pSampleMask           = NULL, // Optional
         .alphaToCoverageEnable = VK_FALSE, // Optional
@@ -886,12 +932,69 @@ void createGraphicsPipeline()
                                       &vkData.graphicsPipeline));
 }
 
+void createCommandPool()
+{
+    VkCommandPoolCreateInfo poolInfo = {
+        .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = vkData.graphicsFamily,
+        .flags            = 0 // Optional
+    };
+
+    VK_CHECK(vkCreateCommandPool(vkData.device, &poolInfo, NULL, &vkData.commandPool));
+}
+
+void createDepthResources()
+{
+    vkData.depthFormat = findDepthFormat(vkData.physicalDevice);
+
+    createImage(vkData.physicalDevice, vkData.device,
+                vkData.swapchainImageExtent.width, vkData.swapchainImageExtent.height, vkData.depthFormat,
+                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_SAMPLE_COUNT_1_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vkData.depthImage, &vkData.depthImageMemory);
+
+    vkData.depthImageView = createImageView(vkData.device, vkData.depthImage, vkData.depthFormat,
+                                            VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    transitionImageLayout(vkData.device, vkData.commandPool, vkData.graphicsQueue, vkData.depthImage,
+                          vkData.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+}
+
+// TODO: VERY IMPORTANT
+// This crashes the computer becuase of an arrogant lack of error checking
+// pls fix
+void createMultisampleTarget()
+{
+    createImage(vkData.physicalDevice, vkData.device,
+                vkData.swapchainImageExtent.width, vkData.swapchainImageExtent.height,
+                vkData.swapchainImageFormat.format, VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                VK_SAMPLE_COUNT_16_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                &vkData.msImage, &vkData.msImageMemory);
+
+    vkData.msImageView = createImageView(vkData.device, vkData.msImage,
+                                         vkData.swapchainImageFormat.format, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    createImage(vkData.physicalDevice, vkData.device,
+                vkData.swapchainImageExtent.width, vkData.swapchainImageExtent.height,
+                vkData.depthFormat, VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                VK_SAMPLE_COUNT_16_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                &vkData.msDepthImage, &vkData.msDepthImageMemory);
+
+    vkData.msDepthImageView = createImageView(vkData.device, vkData.msDepthImage,
+                                              vkData.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+}
+
 void createFramebuffers()
 {
     vkData.swapchainFramebuffers = malloc(vkData.swapchainImageCount * sizeof(VkFramebuffer));
 
     for (size_t i = 0; i < vkData.swapchainImageCount; i++) {
-        VkImageView attachments[] = {vkData.swapchainImageViews[i], vkData.depthImageView};
+        VkImageView attachments[] = {
+            vkData.msImageView, vkData.swapchainImageViews[i],
+            vkData.msDepthImageView, vkData.depthImageView
+        };
 
         VkFramebufferCreateInfo framebufferInfo = {
             .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -906,34 +1009,6 @@ void createFramebuffers()
         VK_CHECK(vkCreateFramebuffer(vkData.device, &framebufferInfo, NULL,
                                      &vkData.swapchainFramebuffers[i]));
     }
-}
-
-void createCommandPool()
-{
-    VkCommandPoolCreateInfo poolInfo = {
-        .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .queueFamilyIndex = vkData.graphicsFamily,
-        .flags            = 0 // Optional
-    };
-
-    VK_CHECK(vkCreateCommandPool(vkData.device, &poolInfo, NULL, &vkData.commandPool));
-}
-
-void createDepthResources()
-{
-    VkFormat depthFormat = findDepthFormat(vkData.physicalDevice);
-
-    createImage(vkData.physicalDevice, vkData.device,
-                vkData.swapchainImageExtent.width, vkData.swapchainImageExtent.height, depthFormat,
-                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vkData.depthImage, &vkData.depthImageMemory);
-
-    vkData.depthImageView = createImageView(vkData.device, vkData.depthImage, depthFormat,
-                                            VK_IMAGE_ASPECT_DEPTH_BIT);
-
-    transitionImageLayout(vkData.device, vkData.commandPool, vkData.graphicsQueue, vkData.depthImage,
-                          depthFormat, VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
 void createTextureImage()
@@ -962,7 +1037,8 @@ void createTextureImage()
 
     createImage(vkData.physicalDevice, vkData.device, texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
                 VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vkData.textureImage, &vkData.textureImageMemory);
+                VK_SAMPLE_COUNT_1_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                &vkData.textureImage, &vkData.textureImageMemory);
 
     transitionImageLayout(vkData.device, vkData.commandPool, vkData.graphicsQueue, vkData.textureImage,
                           VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED,
@@ -1168,6 +1244,8 @@ void createCommandBuffers()
             {
                 .color = {0.0f, 0.0f, 0.0f, 1.0f}
             }, {
+                .color = {0.0f, 0.0f, 0.0f, 1.0f}
+            }, {
                 .depthStencil = {1.0f, 0}
             }
         };
@@ -1244,6 +1322,7 @@ void initVulkan()
 
     // Swapchain things
     createDepthResources();
+    createMultisampleTarget();
     createFramebuffers();
 
     createTextureImage();

@@ -23,7 +23,7 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue queue,
                 VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t width, uint32_t height,
-                 VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+                 VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkSampleCountFlagBits samples,
                  VkMemoryPropertyFlags properties, VkImage *image, VkDeviceMemory *imageMemory);
 
 void transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue queue,
