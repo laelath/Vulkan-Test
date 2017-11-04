@@ -1516,6 +1516,7 @@ void renderFrame()
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapchain();
+        return;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
         ERR_EXIT("%s\n", getVkResultString(result));
 
@@ -1546,9 +1547,9 @@ void renderFrame()
 
     result = vkQueuePresentKHR(vkData.presentQueue, &presentInfo);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
         recreateSwapchain();
-    } else if (result != VK_SUCCESS)
+    else if (result != VK_SUCCESS)
         ERR_EXIT("%s\n", getVkResultString(result));
 }
 
