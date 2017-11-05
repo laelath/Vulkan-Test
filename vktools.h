@@ -31,8 +31,8 @@ void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t widt
                            VkImageSubresourceRange subresourceRange);*/
 
 void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
-                       VkImageLayout newLayout, VkImageSubresourceRange subresourceRange,
-                       VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask);
+                       VkImageLayout newLayout, VkImageSubresourceRange subresourceRange);
+                       //VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask);
 
 void copyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image,
                        uint32_t width, uint32_t height);

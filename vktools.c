@@ -248,8 +248,8 @@ void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t widt
 }*/
 
 void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
-                       VkImageLayout newLayout, VkImageSubresourceRange subresourceRange,
-                       VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask)
+                       VkImageLayout newLayout, VkImageSubresourceRange subresourceRange)
+                       //VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask)
 {
     VkImageMemoryBarrier barrier = {
         .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -261,35 +261,35 @@ void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImage
         .subresourceRange    = subresourceRange
     };
 
-    //VkPipelineStageFlags srcStageMask, dstStageMask;
+    VkPipelineStageFlags srcStageMask, dstStageMask;
 
     switch (oldLayout) {
         case VK_IMAGE_LAYOUT_UNDEFINED:
             barrier.srcAccessMask = 0;
-            //srcStageMask          = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            srcStageMask          = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             break;
-        case VK_IMAGE_LAYOUT_PREINITIALIZED:
-            barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+        //case VK_IMAGE_LAYOUT_PREINITIALIZED:
+            //barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
             //srcStageMask          =
             break;
         case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
             barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
             //srcStageMask          =
             break;
-        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-            barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        //case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+            //barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
             //srcStageMask          =
             break;
         case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
             barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            //srcStageMask          =
+            srcStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
             break;
         case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
             barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            //srcStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            srcStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
             break;
-        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-            barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        //case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+            //barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
             //srcStageMask          =
             break;
         default:
@@ -299,25 +299,25 @@ void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImage
     switch (newLayout) {
         case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            //dstStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            dstStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
             break;
         case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            //dstStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            dstStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
             break;
-        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-            barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        //case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+            //barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
             //dstStageMask        =
             break;
         case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
             barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            //dstStageMask          = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            dstStageMask          = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
             break;
         case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
             if (barrier.srcAccessMask == 0)
                 barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            //dstStageMask          = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dstStageMask          = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
             break;
         default:
             ERR_EXIT("Unsupported destination transfer layout\n");

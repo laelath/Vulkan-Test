@@ -988,8 +988,8 @@ void createDepthResources()
         subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
 
     transitionImageLayout(commandBuffer, vkData.depthImage, VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, subresourceRange,
-                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, subresourceRange);
+                          //VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 }
@@ -1084,14 +1084,14 @@ void createTextureImage()
     };
 
     transitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
-                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
+                          //VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     copyBufferToImage(commandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
 
     transitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
-                          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
+                          //VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 
@@ -1126,7 +1126,8 @@ void createTextureImageMipMapped()
     vkData.textureMipLevels = floor(log2(texWidth > texHeight ? texWidth : texHeight)) + 1;
 
     createImage(vkData.physicalDevice, vkData.device, texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
-                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_SAMPLE_COUNT_1_BIT, vkData.textureMipLevels, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                 &vkData.textureImage, &vkData.textureImageMemory);
 
@@ -1141,14 +1142,14 @@ void createTextureImageMipMapped()
     };
 
     transitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
-                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
+                          //VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     copyBufferToImage(copyCommandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
 
     transitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, subresourceRange,
-                          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, subresourceRange);
+                          //VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, copyCommandBuffer);
 
@@ -1190,22 +1191,22 @@ void createTextureImageMipMapped()
         };
 
         transitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
-                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipSubRange,
-                              VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT);
+                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipSubRange);
+                              //VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
         vkCmdBlitImage(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                        vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                        1, &imageBlit, VK_FILTER_LINEAR);
 
         transitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, mipSubRange,
-                              VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, mipSubRange);
+                              //VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
     }
 
     subresourceRange.levelCount = vkData.textureMipLevels;
     transitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
-                          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
+                          //VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, blitCommandBuffer);
 }
