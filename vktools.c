@@ -118,10 +118,11 @@ void createBuffer(VkPhysicalDevice physicalDevice, VkDevice device, VkDeviceSize
     vkBindBufferMemory(device, *buffer, *bufferMemory, 0);
 }
 
-void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue queue,
+void copyBuffer(/*VkDevice device, VkCommandPool commandPool, VkQueue queue,*/
+                VkCommandBuffer commandBuffer,
                 VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
 {
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands(device, commandPool);
+    //VkCommandBuffer commandBuffer = beginSingleTimeCommands(device, commandPool);
 
     VkBufferCopy copyRegion = {
         .srcOffset = 0,
@@ -131,12 +132,13 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue queue,
 
     vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-    endSingleTimeCommands(device, commandPool, queue, commandBuffer);
+    //endSingleTimeCommands(device, commandPool, queue, commandBuffer);
 }
 
 void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t width, uint32_t height,
                  VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkSampleCountFlagBits samples,
-                 VkMemoryPropertyFlags properties, VkImage *image, VkDeviceMemory *imageMemory)
+                 uint32_t mipLevels, VkMemoryPropertyFlags properties,
+                 VkImage *image, VkDeviceMemory *imageMemory)
 {
     VkImageCreateInfo imageInfo = {
         .sType     = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -146,7 +148,7 @@ void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t widt
             .height = height,
             .depth  = 1,
         },
-        .mipLevels     = 1,
+        .mipLevels     = mipLevels,
         .arrayLayers   = 1,
         .format        = format,
         .tiling        = tiling,
@@ -173,10 +175,11 @@ void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t widt
     vkBindImageMemory(device, *image, *imageMemory, 0);
 }
 
-void transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue queue,
-                           VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+/*void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format,
+                           VkImageLayout oldLayout, VkImageLayout newLayout,
+                           VkImageSubresourceRange subresourceRange)
 {
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands(device, commandPool);
+    //VkCommandBuffer commandBuffer = beginSingleTimeCommands(device, commandPool);
 
     VkImageMemoryBarrier barrier = {
         .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -185,15 +188,16 @@ void transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue q
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image               = image,
-        .subresourceRange = {
+        .subresourceRange    = subresourceRange
+        /.subresourceRange = {
             .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel   = 0,
             .levelCount     = 1,
             .baseArrayLayer = 0,
             .layerCount     = 1,
-        },
-        .srcAccessMask = 0, // TODO
-        .dstAccessMask = 0, // TODO
+        },/
+        //.srcAccessMask = 0, // TODO
+        //.dstAccessMask = 0, // TODO
     };
 
     if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
@@ -240,14 +244,91 @@ void transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue q
         1, &barrier
     );
 
-    endSingleTimeCommands(device, commandPool, queue, commandBuffer);
+    //endSingleTimeCommands(device, commandPool, queue, commandBuffer);
+}*/
+
+void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
+                       VkImageLayout newLayout, VkImageSubresourceRange subresourceRange,
+                       VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask)
+{
+    VkImageMemoryBarrier barrier = {
+        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .oldLayout           = oldLayout,
+        .newLayout           = newLayout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image               = image,
+        .subresourceRange    = subresourceRange
+    };
+
+    //VkPipelineStageFlags srcStageMask, dstStageMask;
+
+    switch (oldLayout) {
+        case VK_IMAGE_LAYOUT_UNDEFINED:
+            barrier.srcAccessMask = 0;
+            //srcStageMask          = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_PREINITIALIZED:
+            barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+            //srcStageMask          =
+            break;
+        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+            barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            //srcStageMask          =
+            break;
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+            barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            //srcStageMask          =
+            break;
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            //srcStageMask          =
+            break;
+        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            //srcStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+            barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            //srcStageMask          =
+            break;
+        default:
+            ERR_EXIT("Unsupported source transfer layout\n");
+    }
+
+    switch (newLayout) {
+        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            //dstStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            //dstStageMask          = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+            barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            //dstStageMask        =
+            break;
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+            barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            //dstStageMask          = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+            if (barrier.srcAccessMask == 0)
+                barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            //dstStageMask          = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            break;
+        default:
+            ERR_EXIT("Unsupported destination transfer layout\n");
+    }
+
+    vkCmdPipelineBarrier(commandBuffer, srcStageMask, dstStageMask, 0, 0, NULL, 0, NULL, 1, &barrier);
 }
 
-void copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQueue queue,
-                       VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+void copyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image,
+                       uint32_t width, uint32_t height)
 {
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands(device, commandPool);
-
     VkBufferImageCopy region = {
         .bufferOffset      = 0,
         .bufferRowLength   = 0,
@@ -270,11 +351,10 @@ void copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQueue queue
         1,
         &region
     );
-
-    endSingleTimeCommands(device, commandPool, queue, commandBuffer);
 }
 
-VkImageView createImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags)
+VkImageView createImageView(VkDevice device, VkImage image, VkFormat format,
+                            VkImageAspectFlags aspectFlags, uint32_t mipLevels)
 {
     VkImageViewCreateInfo viewInfo = {
         .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -284,7 +364,7 @@ VkImageView createImageView(VkDevice device, VkImage image, VkFormat format, VkI
         .subresourceRange = {
             .aspectMask     = aspectFlags,
             .baseMipLevel   = 0,
-            .levelCount     = 1,
+            .levelCount     = mipLevels,
             .baseArrayLayer = 0,
             .layerCount     = 1,
         },

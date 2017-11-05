@@ -108,6 +108,7 @@ struct VulkanData {
     VkDeviceMemory uniformBufferMemory;
 
     // Texture stuff
+    uint32_t       textureMipLevels;
     VkImage        textureImage;
     VkDeviceMemory textureImageMemory;
     VkImageView    textureImageView;
@@ -606,7 +607,7 @@ void createImageViews()
     for (size_t i = 0; i < vkData.swapchainImageCount; i++) {
         vkData.swapchainImageViews[i] = createImageView(vkData.device, vkData.swapchainImages[i],
                                                         vkData.swapchainImageFormat.format,
-                                                        VK_IMAGE_ASPECT_COLOR_BIT);
+                                                        VK_IMAGE_ASPECT_COLOR_BIT, 1);
     }
 }
 
@@ -968,40 +969,52 @@ void createDepthResources()
     createImage(vkData.physicalDevice, vkData.device,
                 vkData.swapchainImageExtent.width, vkData.swapchainImageExtent.height, vkData.depthFormat,
                 VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_SAMPLE_COUNT_1_BIT,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vkData.depthImage, &vkData.depthImageMemory);
+                1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vkData.depthImage, &vkData.depthImageMemory);
 
     vkData.depthImageView = createImageView(vkData.device, vkData.depthImage, vkData.depthFormat,
-                                            VK_IMAGE_ASPECT_DEPTH_BIT);
+                                            VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 
-    transitionImageLayout(vkData.device, vkData.commandPool, vkData.graphicsQueue, vkData.depthImage,
-                          vkData.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
+
+    VkImageSubresourceRange subresourceRange = {
+        .aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT,
+        .baseMipLevel   = 0,
+        .levelCount     = 1,
+        .baseArrayLayer = 0,
+        .layerCount     = 1,
+    };
+
+    if (hasStencilComponent(vkData.depthFormat))
+        subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+
+    transitionImageLayout(commandBuffer, vkData.depthImage, VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, subresourceRange,
+                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+
+    endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 }
 
-// TODO: VERY IMPORTANT
-// This crashes the computer becuase of an arrogant lack of error checking
-// pls fix
 void createMultisampleTarget()
 {
     createImage(vkData.physicalDevice, vkData.device,
                 vkData.swapchainImageExtent.width, vkData.swapchainImageExtent.height,
                 vkData.swapchainImageFormat.format, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                vkData.samples, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                vkData.samples, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                 &vkData.msImage, &vkData.msImageMemory);
 
-    vkData.msImageView = createImageView(vkData.device, vkData.msImage,
-                                         vkData.swapchainImageFormat.format, VK_IMAGE_ASPECT_COLOR_BIT);
+    vkData.msImageView = createImageView(vkData.device, vkData.msImage, vkData.swapchainImageFormat.format,
+                                         VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
     createImage(vkData.physicalDevice, vkData.device,
                 vkData.swapchainImageExtent.width, vkData.swapchainImageExtent.height,
                 vkData.depthFormat, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                vkData.samples, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                vkData.samples, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                 &vkData.msDepthImage, &vkData.msDepthImageMemory);
 
     vkData.msDepthImageView = createImageView(vkData.device, vkData.msDepthImage,
-                                              vkData.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+                                              vkData.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 }
 
 void createFramebuffers()
@@ -1053,30 +1066,154 @@ void createTextureImage()
 
     stbi_image_free(pixels);
 
+    vkData.textureMipLevels = 1;
+
     createImage(vkData.physicalDevice, vkData.device, texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
                 VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                VK_SAMPLE_COUNT_1_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                VK_SAMPLE_COUNT_1_BIT, vkData.textureMipLevels, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                 &vkData.textureImage, &vkData.textureImageMemory);
 
-    transitionImageLayout(vkData.device, vkData.commandPool, vkData.graphicsQueue, vkData.textureImage,
-                          VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
 
-    copyBufferToImage(vkData.device, vkData.commandPool, vkData.graphicsQueue,
-                      stagingBuffer, vkData.textureImage, texWidth, texHeight);
+    VkImageSubresourceRange subresourceRange = {
+        .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel   = 0,
+        .levelCount     = 1,
+        .baseArrayLayer = 0,
+        .layerCount     = 1,
+    };
 
-    transitionImageLayout(vkData.device, vkData.commandPool, vkData.graphicsQueue, vkData.textureImage,
-                          VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    transitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
+                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    copyBufferToImage(commandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
+
+    transitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 
     vkDestroyBuffer(vkData.device, stagingBuffer, NULL);
     vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
 }
 
+void createTextureImageMipMapped()
+{
+    int texWidth, texHeight, texChannels;
+    stbi_uc *pixels = stbi_load("textures/steamsad_santa.png", &texWidth, &texHeight, &texChannels,
+                                STBI_rgb_alpha);
+
+    if (!pixels)
+        ERR_EXIT("Unable to load texture image\n");
+
+    VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+    VkBuffer       stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    createBuffer(vkData.physicalDevice, vkData.device, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 &stagingBuffer, &stagingBufferMemory);
+
+    void *data;
+    vkMapMemory(vkData.device, stagingBufferMemory, 0, imageSize, 0, &data);
+    memcpy(data, pixels, imageSize);
+    vkUnmapMemory(vkData.device, stagingBufferMemory);
+
+    stbi_image_free(pixels);
+
+    vkData.textureMipLevels = floor(log2(texWidth > texHeight ? texWidth : texHeight)) + 1;
+
+    createImage(vkData.physicalDevice, vkData.device, texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_SAMPLE_COUNT_1_BIT, vkData.textureMipLevels, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                &vkData.textureImage, &vkData.textureImageMemory);
+
+    VkCommandBuffer copyCommandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
+
+    VkImageSubresourceRange subresourceRange = {
+        .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel   = 0,
+        .levelCount     = 1,
+        .baseArrayLayer = 0,
+        .layerCount     = 1,
+    };
+
+    transitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
+                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    copyBufferToImage(copyCommandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
+
+    transitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, subresourceRange,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, copyCommandBuffer);
+
+    vkDestroyBuffer(vkData.device, stagingBuffer, NULL);
+    vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
+
+    // Generate the mip chain
+    VkCommandBuffer blitCommandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
+
+    for (int32_t i = 1; i < vkData.textureMipLevels; i++) {
+        VkImageBlit imageBlit = {
+            .srcSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .layerCount = 1,
+                .mipLevel   = i - 1
+            },
+            .srcOffsets[1] = {
+                .x = texWidth >> (i - 1),
+                .y = texHeight >> (i - 1),
+                .z = 1
+            },
+            .dstSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .layerCount = 1,
+                .mipLevel   = i
+            },
+            .dstOffsets[1] = {
+                .x = texWidth >> i,
+                .y = texHeight >> i,
+                .z = 1
+            }
+        };
+
+        VkImageSubresourceRange mipSubRange = {
+            .aspectMask   = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = i,
+            .levelCount   = 1,
+            .layerCount   = 1
+        };
+
+        transitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
+                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipSubRange,
+                              VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT);
+
+        vkCmdBlitImage(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &imageBlit, VK_FILTER_LINEAR);
+
+        transitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, mipSubRange,
+                              VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    }
+
+    subresourceRange.levelCount = vkData.textureMipLevels;
+    transitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, blitCommandBuffer);
+}
+
 void createTextureImageView()
 {
     vkData.textureImageView = createImageView(vkData.device, vkData.textureImage, VK_FORMAT_R8G8B8A8_UNORM,
-                                              VK_IMAGE_ASPECT_COLOR_BIT);
+                                              VK_IMAGE_ASPECT_COLOR_BIT, vkData.textureMipLevels);
 }
 
 void createTextureSampler()
@@ -1100,7 +1237,7 @@ void createTextureSampler()
         .mipmapMode              = VK_SAMPLER_MIPMAP_MODE_LINEAR,
         .mipLodBias              = 0.0f,
         .minLod                  = 0.0f,
-        .maxLod                  = 0.0f
+        .maxLod                  = vkData.textureMipLevels
     };
 
     VK_CHECK(vkCreateSampler(vkData.device, &samplerInfo, NULL, &vkData.textureSampler));
@@ -1126,8 +1263,13 @@ void createVertexBuffer()
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                  &vkData.vertexBuffer, &vkData.vertexBufferMemory);
 
-    copyBuffer(vkData.device, vkData.commandPool, vkData.graphicsQueue,
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
+
+    copyBuffer(/*vkData.device, vkData.commandPool, vkData.graphicsQueue,*/
+               commandBuffer,
                stagingBuffer, vkData.vertexBuffer, bufferSize);
+
+    endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 
     vkDestroyBuffer(vkData.device, stagingBuffer, NULL);
     vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
@@ -1153,8 +1295,13 @@ void createIndexBuffer()
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                  &vkData.indexBuffer, &vkData.indexBufferMemory);
 
-    copyBuffer(vkData.device, vkData.commandPool, vkData.graphicsQueue,
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
+
+    copyBuffer(/*vkData.device, vkData.commandPool, vkData.graphicsQueue,*/
+               commandBuffer,
                stagingBuffer, vkData.indexBuffer, bufferSize);
+
+    endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 
     vkDestroyBuffer(vkData.device, stagingBuffer, NULL);
     vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
@@ -1348,7 +1495,8 @@ void initVulkan()
     createMultisampleTarget();
     createFramebuffers();
 
-    createTextureImage();
+    //createTextureImage();
+    createTextureImageMipMapped();
     createTextureImageView();
     createTextureSampler();
 

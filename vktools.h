@@ -19,20 +19,26 @@ void createBuffer(VkPhysicalDevice physicalDevice, VkDevice device, VkDeviceSize
                   VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                   VkBuffer *buffer, VkDeviceMemory *bufferMemory);
 
-void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue queue,
-                VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+void copyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t width, uint32_t height,
                  VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkSampleCountFlagBits samples,
-                 VkMemoryPropertyFlags properties, VkImage *image, VkDeviceMemory *imageMemory);
+                 uint32_t mipLevels, VkMemoryPropertyFlags properties,
+                 VkImage *image, VkDeviceMemory *imageMemory);
 
-void transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue queue,
-                           VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+/*void transitionImageLayout(VkCommandBuffer commandBuffer,
+                           VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout,
+                           VkImageSubresourceRange subresourceRange);*/
 
-void copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQueue queue,
-                       VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
+                       VkImageLayout newLayout, VkImageSubresourceRange subresourceRange,
+                       VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask);
 
-VkImageView createImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+void copyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image,
+                       uint32_t width, uint32_t height);
+
+VkImageView createImageView(VkDevice device, VkImage image, VkFormat format,
+                            VkImageAspectFlags aspectFlags, uint32_t mipLevels);
 
 VkFormat findSupportedFormat(VkPhysicalDevice, const VkFormat *candidates, size_t numCandidates,
                              VkImageTiling tiling, VkFormatFeatureFlags features);
