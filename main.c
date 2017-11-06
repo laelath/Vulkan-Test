@@ -12,6 +12,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#define TINYOBJ_LOADER_C_IMPLEMENTATION
+#include <tinyobj_loader_c.h>
+
 #include "vktools.h"
 
 
@@ -133,7 +136,13 @@ struct Vertex {
     vec2 texCoord;
 };
 
-const struct Vertex vertices[] = {
+struct Vertex *vertices;
+uint32_t      *indices;
+
+//size_t vertexCount;
+//size_t indexCount;
+
+/*const struct Vertex vertices[] = {
    // Position,             Color               Tex Coord
     {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
     {{ 0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
@@ -151,7 +160,7 @@ const uint16_t indices[] = {
     0, 1, 2, 2, 3, 0,
     4, 5, 6, 6, 7, 4
 };
-const size_t indexCount = sizeof(indices) / sizeof(indices[0]);
+const size_t indexCount = sizeof(indices) / sizeof(indices[0]);*/
 
 
 
@@ -743,8 +752,8 @@ VkShaderModule createShaderModule(char * code, size_t codeLen)
 void loadShaders()
 {
     size_t vertCodeLen, fragCodeLen;
-    char *vertShaderCode = getFile("shaders/vert.spv", &vertCodeLen);
-    char *fragShaderCode = getFile("shaders/frag.spv", &fragCodeLen);
+    char *vertShaderCode = getFileData("shaders/vert.spv", &vertCodeLen);
+    char *fragShaderCode = getFileData("shaders/frag.spv", &fragCodeLen);
 
     shaders.vert = createShaderModule(vertShaderCode, vertCodeLen);
     shaders.frag = createShaderModule(fragShaderCode, fragCodeLen);
@@ -1250,6 +1259,35 @@ void createTextureSampler()
     VK_CHECK(vkCreateSampler(vkData.device, &samplerInfo, NULL, &vkData.textureSampler));
 }
 
+void loadModel()
+{
+    size_t dataLen;
+    void *data = getFileData("models/chalet.obj", &dataLen);
+
+    tinyobj_attrib_t    attrib;
+    tinyobj_shape_t    *shapes;
+    size_t              numShapes;
+    tinyobj_material_t *materials;
+    size_t              numMaterials;
+
+    unsigned int flags = TINYOBJ_FLAG_TRIANGULATE;
+    int err = tinyobj_parse_obj(&attrib, &shapes, &numShapes, &materials, &numMaterials, data, dataLen, flags);
+    if (err != TINYOBJ_SUCCESS)
+        ERR_EXIT("Unable to load model\n");
+
+    printf("# of shapes    = %ld\n", numShapes);
+    printf("# of materials = %ld\n", numMaterials);
+
+    for (size_t i = 0; i < numShapes; i++) {
+    }
+
+    tinyobj_attrib_free(&attrib);
+    tinyobj_shapes_free(shapes, numShapes);
+    tinyobj_materials_free(materials, numMaterials);
+
+    free(data);
+}
+
 void createVertexBuffer()
 {
     VkDeviceSize bufferSize = sizeof(vertices);
@@ -1503,6 +1541,8 @@ void initVulkan()
     createTextureImageView();
     createTextureSampler();
 
+    loadModel();
+
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffer();
@@ -1612,8 +1652,8 @@ void windowCursorCallback(GLFWwindow *window, double x, double y)
         inputs.mouseX = x;
         inputs.mouseY = y;
 
-        positions.direction[0] -= dx * 0.01f;
-        positions.direction[1] += dy * 0.01f;
+        positions.direction[0] -= dx * 0.004f;
+        positions.direction[1] += dy * 0.004f;
 
         if (positions.direction[1] > 0.5 * M_PI)
             positions.direction[1] = 0.5 * M_PI;

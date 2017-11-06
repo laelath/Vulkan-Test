@@ -335,7 +335,7 @@ VkFormat findDepthFormat(VkPhysicalDevice physicalDevice)
 
 
 
-char * getFile(const char *fileName, size_t *length)
+char * getFileData(const char *fileName, size_t *length)
 {
     FILE *fp = fopen(fileName, "rb");
     if (fp == NULL) {

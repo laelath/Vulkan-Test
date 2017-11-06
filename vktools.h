@@ -42,7 +42,7 @@ bool hasStencilComponent(VkFormat format);
 
 VkFormat findDepthFormat(VkPhysicalDevice physicalDevice);
 
-char * getFile(const char *fileName, size_t *length);
+char * getFileData(const char *fileName, size_t *length);
 
 #define ERR_EXIT(err_msg...) \
 { \
