@@ -19,22 +19,17 @@ void createBuffer(VkPhysicalDevice physicalDevice, VkDevice device, VkDeviceSize
                   VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                   VkBuffer *buffer, VkDeviceMemory *bufferMemory);
 
-void copyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+void cmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t width, uint32_t height,
                  VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkSampleCountFlagBits samples,
                  uint32_t mipLevels, VkMemoryPropertyFlags properties,
                  VkImage *image, VkDeviceMemory *imageMemory);
 
-/*void transitionImageLayout(VkCommandBuffer commandBuffer,
-                           VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout,
-                           VkImageSubresourceRange subresourceRange);*/
-
-void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
+void cmdTransitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
                        VkImageLayout newLayout, VkImageSubresourceRange subresourceRange);
-                       //VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask);
 
-void copyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image,
+void cmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image,
                        uint32_t width, uint32_t height);
 
 VkImageView createImageView(VkDevice device, VkImage image, VkFormat format,

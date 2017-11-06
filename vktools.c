@@ -118,12 +118,8 @@ void createBuffer(VkPhysicalDevice physicalDevice, VkDevice device, VkDeviceSize
     vkBindBufferMemory(device, *buffer, *bufferMemory, 0);
 }
 
-void copyBuffer(/*VkDevice device, VkCommandPool commandPool, VkQueue queue,*/
-                VkCommandBuffer commandBuffer,
-                VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+void cmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
 {
-    //VkCommandBuffer commandBuffer = beginSingleTimeCommands(device, commandPool);
-
     VkBufferCopy copyRegion = {
         .srcOffset = 0,
         .dstOffset = 0,
@@ -131,8 +127,6 @@ void copyBuffer(/*VkDevice device, VkCommandPool commandPool, VkQueue queue,*/
     };
 
     vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-    //endSingleTimeCommands(device, commandPool, queue, commandBuffer);
 }
 
 void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t width, uint32_t height,
@@ -175,81 +169,8 @@ void createImage(VkPhysicalDevice physicalDevice, VkDevice device, uint32_t widt
     vkBindImageMemory(device, *image, *imageMemory, 0);
 }
 
-/*void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format,
-                           VkImageLayout oldLayout, VkImageLayout newLayout,
-                           VkImageSubresourceRange subresourceRange)
-{
-    //VkCommandBuffer commandBuffer = beginSingleTimeCommands(device, commandPool);
-
-    VkImageMemoryBarrier barrier = {
-        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .oldLayout           = oldLayout,
-        .newLayout           = newLayout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = image,
-        .subresourceRange    = subresourceRange
-        /.subresourceRange = {
-            .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel   = 0,
-            .levelCount     = 1,
-            .baseArrayLayer = 0,
-            .layerCount     = 1,
-        },/
-        //.srcAccessMask = 0, // TODO
-        //.dstAccessMask = 0, // TODO
-    };
-
-    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-
-        if (hasStencilComponent(format))
-            barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-    } else
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-
-    VkPipelineStageFlags sourceStage, destinationStage;
-
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-        sourceStage      = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-               && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-        sourceStage      = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED
-               && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-                              | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    } else {
-        ERR_EXIT("Unsupported layout transition\n");
-    }
-
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        sourceStage, destinationStage,
-        0,
-        0, NULL,
-        0, NULL,
-        1, &barrier
-    );
-
-    //endSingleTimeCommands(device, commandPool, queue, commandBuffer);
-}*/
-
-void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
+void cmdTransitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
                        VkImageLayout newLayout, VkImageSubresourceRange subresourceRange)
-                       //VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask)
 {
     VkImageMemoryBarrier barrier = {
         .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -326,7 +247,7 @@ void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImage
     vkCmdPipelineBarrier(commandBuffer, srcStageMask, dstStageMask, 0, 0, NULL, 0, NULL, 1, &barrier);
 }
 
-void copyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image,
+void cmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer buffer, VkImage image,
                        uint32_t width, uint32_t height)
 {
     VkBufferImageCopy region = {

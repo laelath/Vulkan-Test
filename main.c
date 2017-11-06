@@ -155,11 +155,24 @@ const size_t indexCount = sizeof(indices) / sizeof(indices[0]);
 
 
 
+struct Positions {
+    float distance;
+    vec2  direction;
+} positions;
+
 struct VertexTransforms {
     mat4x4 model;
     mat4x4 view;
     mat4x4 proj;
 } mats;
+
+
+
+struct InputInfo {
+    double mouseX;
+    double mouseY;
+    bool mouse2Pressed;
+} inputs;
 
 
 
@@ -987,7 +1000,7 @@ void createDepthResources()
     if (hasStencilComponent(vkData.depthFormat))
         subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
 
-    transitionImageLayout(commandBuffer, vkData.depthImage, VK_IMAGE_LAYOUT_UNDEFINED,
+    cmdTransitionImageLayout(commandBuffer, vkData.depthImage, VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, subresourceRange);
                           //VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
 
@@ -1083,15 +1096,13 @@ void createTextureImage()
         .layerCount     = 1,
     };
 
-    transitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
+    cmdTransitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
-                          //VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
-    copyBufferToImage(commandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
+    cmdCopyBufferToImage(commandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
 
-    transitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    cmdTransitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
-                          //VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 
@@ -1141,15 +1152,13 @@ void createTextureImageMipMapped()
         .layerCount     = 1,
     };
 
-    transitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
+    cmdTransitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
-                          //VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
-    copyBufferToImage(copyCommandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
+    cmdCopyBufferToImage(copyCommandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
 
-    transitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    cmdTransitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, subresourceRange);
-                          //VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, copyCommandBuffer);
 
@@ -1190,23 +1199,20 @@ void createTextureImageMipMapped()
             .layerCount   = 1
         };
 
-        transitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
+        cmdTransitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipSubRange);
-                              //VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
         vkCmdBlitImage(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                        vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                        1, &imageBlit, VK_FILTER_LINEAR);
 
-        transitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        cmdTransitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                               VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, mipSubRange);
-                              //VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
     }
 
     subresourceRange.levelCount = vkData.textureMipLevels;
-    transitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    cmdTransitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
-                          //VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, blitCommandBuffer);
 }
@@ -1266,9 +1272,7 @@ void createVertexBuffer()
 
     VkCommandBuffer commandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
 
-    copyBuffer(/*vkData.device, vkData.commandPool, vkData.graphicsQueue,*/
-               commandBuffer,
-               stagingBuffer, vkData.vertexBuffer, bufferSize);
+    cmdCopyBuffer(commandBuffer, stagingBuffer, vkData.vertexBuffer, bufferSize);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 
@@ -1298,9 +1302,7 @@ void createIndexBuffer()
 
     VkCommandBuffer commandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
 
-    copyBuffer(/*vkData.device, vkData.commandPool, vkData.graphicsQueue,*/
-               commandBuffer,
-               stagingBuffer, vkData.indexBuffer, bufferSize);
+    cmdCopyBuffer(commandBuffer, stagingBuffer, vkData.indexBuffer, bufferSize);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 
@@ -1601,10 +1603,48 @@ void windowKeyCallback(GLFWwindow *window, int key, int scancode, int action, in
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
+void windowCursorCallback(GLFWwindow *window, double x, double y)
+{
+    if (inputs.mouse2Pressed) {
+        double dx = x - inputs.mouseX;
+        double dy = y - inputs.mouseY;
+
+        inputs.mouseX = x;
+        inputs.mouseY = y;
+
+        positions.direction[0] -= dx * 0.01f;
+        positions.direction[1] += dy * 0.01f;
+
+        if (positions.direction[1] > 0.5 * M_PI)
+            positions.direction[1] = 0.5 * M_PI;
+        else if (positions.direction[1] < -0.5 * M_PI)
+            positions.direction[1] = -0.5 * M_PI;
+
+        if (positions.direction[0] > M_PI)
+            positions.direction[0] -= 2 * M_PI;
+        else if (positions.direction[0] < -M_PI)
+            positions.direction[0] += 2 * M_PI;
+    }
+}
+
+void windowButtonCallback(GLFWwindow *window, int button, int action, int mods)
+{
+    if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+        if (action == GLFW_PRESS) {
+            inputs.mouse2Pressed = true;
+            glfwGetCursorPos(window, &inputs.mouseX, &inputs.mouseY);
+        } else
+            inputs.mouse2Pressed = false;
+    }
+}
+
+void windowScrollCallback(GLFWwindow *window, double dx, double dy)
+{
+    positions.distance -= dy * positions.distance * 0.1f;
+}
+
 void windowResizeCallback(GLFWwindow *window, int width, int height)
 {
-    if (width == 0 || height == 0)
-        return;
     windowWidth = width;
     windowHeight = height;
     //recreateSwapchain();
@@ -1620,12 +1660,15 @@ void initWindow()
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    window = glfwCreateWindow(windowWidth, windowHeight, "Vulkan Hello Triangle", NULL, NULL);
+    window = glfwCreateWindow(windowWidth, windowHeight, "Vulkan Test Program", NULL, NULL);
     if (!window)
         ERR_EXIT("Error creating GLFW window\n");
 
     glfwSetKeyCallback(window, windowKeyCallback);
-    //glfwSetWindowSizeCallback(window, windowResizeCallback);
+    glfwSetCursorPosCallback(window, windowCursorCallback);
+    glfwSetMouseButtonCallback(window, windowButtonCallback);
+    glfwSetScrollCallback(window, windowScrollCallback);
+    glfwSetWindowSizeCallback(window, windowResizeCallback);
 }
 
 
@@ -1634,18 +1677,32 @@ void initMats()
 {
     mat4x4_identity(mats.model);
 
-    vec3 eye = {2.0f, 2.0f, 2.0f}, center = {0.0f, 0.0f, 0.0f}, up = {0.0f, 0.0f, 1.0f};
-    mat4x4_look_at(mats.view, eye, center, up);
+    positions.distance = 4.0f;
+    positions.direction[0] = sqrt(2.0) / 2.0;
+    positions.direction[1] = sqrt(2.0) / 2.0;
 
     float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
-    mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 10.0f);
+    mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 1000.0f);
 }
 
 
 
 void updateUniformBuffer(double delta)
 {
-    mat4x4_rotate_Z(mats.model, mats.model, delta * (2 * M_PI) / 15.0f);
+    vec3 eye = {0.0f, 1.0f, 0.0f}, center = {0.0f, 0.0f, 0.0f}, up = {0.0f, 0.0f, 1.0f};
+
+    vec3 xAxis = {1.0f, 0.0f, 0.0f}, zAxis = {0.0f, 0.0f, 1.0f};
+    quat xRot, zRot;
+
+    quat_rotate(xRot, positions.direction[1], xAxis);
+    quat_rotate(zRot, positions.direction[0], zAxis);
+    quat_mul_vec3(eye, xRot, eye);
+    quat_mul_vec3(eye, zRot, eye);
+
+    vec3_scale(eye, eye, positions.distance);
+    mat4x4_look_at(mats.view, eye, center, up);
+
+    //mat4x4_rotate_Z(mats.model, mats.model, delta * (2 * M_PI) / 15.0f);
 
     void *data;
     vkMapMemory(vkData.device, vkData.uniformBufferMemory, 0, sizeof(mats), 0, &data);
