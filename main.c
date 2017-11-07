@@ -139,8 +139,8 @@ struct Vertex {
 struct Vertex *vertices;
 uint32_t      *indices;
 
-//size_t vertexCount;
-//size_t indexCount;
+size_t vertexCount;
+size_t indexCount;
 
 /*const struct Vertex vertices[] = {
    // Position,             Color               Tex Coord
@@ -156,7 +156,7 @@ uint32_t      *indices;
 };
 const size_t vertexCount = sizeof(vertices) / sizeof(vertices[0]);
 
-const uint16_t indices[] = {
+const uint32_t indices[] = {
     0, 1, 2, 2, 3, 0,
     4, 5, 6, 6, 7, 4
 };
@@ -1122,7 +1122,7 @@ void createTextureImage()
 void createTextureImageMipMapped()
 {
     int texWidth, texHeight, texChannels;
-    stbi_uc *pixels = stbi_load("textures/steamsad_santa.png", &texWidth, &texHeight, &texChannels,
+    stbi_uc *pixels = stbi_load("textures/chalet.jpg", &texWidth, &texHeight, &texChannels,
                                 STBI_rgb_alpha);
 
     if (!pixels)
@@ -1275,10 +1275,34 @@ void loadModel()
     if (err != TINYOBJ_SUCCESS)
         ERR_EXIT("Unable to load model\n");
 
-    printf("# of shapes    = %ld\n", numShapes);
-    printf("# of materials = %ld\n", numMaterials);
+    // Initial upper bounds allocation
+    vertices = malloc(attrib.num_faces * sizeof(struct Vertex));
+    indices  = malloc(attrib.num_faces * sizeof(uint32_t));
 
-    for (size_t i = 0; i < numShapes; i++) {
+    vertexCount = attrib.num_faces;
+    indexCount  = attrib.num_faces;
+
+    // TODO: this only loads the first shape, maybe fix?
+    for (size_t i = 0; i < shapes[0].length; i++) {
+        for (size_t j = 0; j < attrib.face_num_verts[i + shapes[0].face_offset]; j++) {
+            size_t vertIdx = 3 * i + j;
+            tinyobj_vertex_index_t v = attrib.faces[vertIdx];
+            struct Vertex vertex = {
+                .pos = {
+                    attrib.vertices[3 * v.v_idx + 0],
+                    attrib.vertices[3 * v.v_idx + 1],
+                    attrib.vertices[3 * v.v_idx + 2]
+                },
+                .texCoord = {
+                    attrib.texcoords[2 * v.vt_idx + 0],
+                    1.0f - attrib.texcoords[2 * v.vt_idx + 1]
+                },
+                .color = {1.0f, 1.0f, 1.0f}
+            };
+
+            vertices[vertIdx] = vertex;
+            indices[vertIdx]  = vertIdx;
+        }
     }
 
     tinyobj_attrib_free(&attrib);
@@ -1290,7 +1314,7 @@ void loadModel()
 
 void createVertexBuffer()
 {
-    VkDeviceSize bufferSize = sizeof(vertices);
+    VkDeviceSize bufferSize = vertexCount * sizeof(struct Vertex);
 
     VkBuffer       stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1320,7 +1344,7 @@ void createVertexBuffer()
 
 void createIndexBuffer()
 {
-    VkDeviceSize bufferSize = sizeof(indices);
+    VkDeviceSize bufferSize = indexCount * sizeof(uint32_t);
 
     VkBuffer       stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1480,7 +1504,7 @@ void createCommandBuffers()
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(vkData.swapchainCommandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-        vkCmdBindIndexBuffer(vkData.swapchainCommandBuffers[i], vkData.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(vkData.swapchainCommandBuffers[i], vkData.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
         vkCmdBindDescriptorSets(vkData.swapchainCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 vkData.pipelineLayout, 0, 1, &vkData.descriptorSet, 0, NULL);
@@ -1715,7 +1739,8 @@ void initWindow()
 
 void initMats()
 {
-    mat4x4_identity(mats.model);
+    //mat4x4_identity(mats.model);
+    mat4x4_translate(mats.model, 0, 0, -0.3);
 
     positions.distance = 4.0f;
     positions.direction[0] = sqrt(2.0) / 2.0;
