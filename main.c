@@ -132,8 +132,8 @@ struct VulkanData {
 
 struct Vertex {
     vec3 pos;
-    vec3 color;
     vec2 texCoord;
+    vec3 color;
 };
 
 struct Vertex *vertices;
@@ -141,6 +141,7 @@ uint32_t      *indices;
 
 size_t vertexCount;
 size_t indexCount;
+
 
 /*const struct Vertex vertices[] = {
    // Position,             Color               Tex Coord
@@ -1279,14 +1280,25 @@ void loadModel()
     vertices = malloc(attrib.num_faces * sizeof(struct Vertex));
     indices  = malloc(attrib.num_faces * sizeof(uint32_t));
 
-    vertexCount = attrib.num_faces;
-    indexCount  = attrib.num_faces;
+    struct ObjVertex {
+        uint32_t v;
+        uint32_t vt;
+    };
+
+    struct ObjVertex *objVerts = malloc(attrib.num_faces * sizeof(struct ObjVertex));
+
+    vertexCount = 0;
+    indexCount  = 0;
+
+    uint32_t maxV = 0;
+    uint32_t maxVt = 0;
 
     // TODO: this only loads the first shape, maybe fix?
     for (size_t i = 0; i < shapes[0].length; i++) {
         for (size_t j = 0; j < attrib.face_num_verts[i + shapes[0].face_offset]; j++) {
             size_t vertIdx = 3 * i + j;
             tinyobj_vertex_index_t v = attrib.faces[vertIdx];
+
             struct Vertex vertex = {
                 .pos = {
                     attrib.vertices[3 * v.v_idx + 0],
@@ -1300,10 +1312,38 @@ void loadModel()
                 .color = {1.0f, 1.0f, 1.0f}
             };
 
-            vertices[vertIdx] = vertex;
-            indices[vertIdx]  = vertIdx;
+            bool found = false;
+            if (v.v_idx <= maxV && v.vt_idx <= maxVt) {
+                for (size_t k = vertexCount; k > 0; k--) {
+                    if (objVerts[k - 1].v == v.v_idx && objVerts[k - 1].vt == v.vt_idx) {
+                        indices[vertIdx] = k - 1;
+                        found = true;
+                        break;
+                    }
+                }
+            } else {
+                if (v.v_idx > maxV)
+                    maxV = v.v_idx;
+                if (v.vt_idx > maxVt)
+                    maxVt = v.vt_idx;
+            }
+
+            if (!found) {
+                vertices[vertexCount] = vertex;
+                objVerts[vertexCount].v = v.v_idx;
+                objVerts[vertexCount].vt = v.vt_idx;
+                indices[vertIdx]  = vertexCount;
+                vertexCount++;
+            }
+            indexCount++;
         }
     }
+
+    printf("Vertices: %ld, Indices: %ld\n", vertexCount, indexCount);
+
+    free(objVerts);
+
+    vertices = realloc(vertices, vertexCount * sizeof(struct Vertex));
 
     tinyobj_attrib_free(&attrib);
     tinyobj_shapes_free(shapes, numShapes);
