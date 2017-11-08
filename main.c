@@ -1783,8 +1783,8 @@ void initMats()
     mat4x4_translate(mats.model, 0, 0, -0.3);
 
     positions.distance = 4.0f;
-    positions.direction[0] = sqrt(2.0) / 2.0;
-    positions.direction[1] = sqrt(2.0) / 2.0;
+    positions.direction[0] = M_PI / 4.0;
+    positions.direction[1] = M_PI / 6.0;
 
     float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
     mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 1000.0f);
