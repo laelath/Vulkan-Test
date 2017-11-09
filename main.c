@@ -1301,9 +1301,9 @@ void loadModel()
 
             struct Vertex vertex = {
                 .pos = {
-                    attrib.vertices[3 * v.v_idx + 0],
-                    attrib.vertices[3 * v.v_idx + 1],
-                    attrib.vertices[3 * v.v_idx + 2]
+                    -attrib.vertices[3 * v.v_idx + 0],
+                    attrib.vertices[3 * v.v_idx + 2],
+                    attrib.vertices[3 * v.v_idx + 1]
                 },
                 .texCoord = {
                     attrib.texcoords[2 * v.vt_idx + 0],
@@ -1780,29 +1780,68 @@ void initWindow()
 void initMats()
 {
     //mat4x4_identity(mats.model);
-    mat4x4_translate(mats.model, 0, 0, -0.3);
+    mat4x4_translate(mats.model, 0, -0.3, 0);
+
+    vec4 xAxis = {1.0f, 0.0f, 0.0f, 0.0f}, yAxis = {0.0f, 1.0f, 0.0f, 0.0f}, zAxis = {0.0f, 0.0f, 1.0f, 0.0f};
+    vec4 xModel, yModel, zModel;
+    vec4 xView, yView, zView;
+    vec4 xProj, yProj, zProj;
+
+    mat4x4_mul_vec4(xModel, mats.model, xAxis);
+    mat4x4_mul_vec4(yModel, mats.model, yAxis);
+    mat4x4_mul_vec4(zModel, mats.model, zAxis);
+
+    printf("Model: {%f, %f, %f}, {%f, %f, %f}, {%f, %f, %f}\n",
+           xModel[0], xModel[1], xModel[2], yModel[0], yModel[1], yModel[2], zModel[0], zModel[1], zModel[2]);
 
     positions.distance = 4.0f;
-    positions.direction[0] = M_PI / 4.0;
-    positions.direction[1] = M_PI / 6.0;
+    //positions.direction[0] = M_PI / 4.0;
+    //positions.direction[1] = M_PI / 6.0;
+    positions.direction[0] = 0;
+    positions.direction[1] = 0;
+
+    vec3 eye = {0.0f, 0.0f, -1.0f}, center = {0.0f, 0.0f, 0.0f}, up = {0.0f, 1.0f, 0.0f};
+    vec3 horiz = {1.0f, 0.0f, 0.0f};
+    quat vRot, hRot;
+
+    quat_rotate(vRot, positions.direction[1], horiz);
+    quat_rotate(hRot, positions.direction[0], up);
+    quat_mul_vec3(eye, vRot, eye);
+    quat_mul_vec3(eye, hRot, eye);
+
+    vec3_scale(eye, eye, positions.distance);
+    mat4x4_look_at(mats.view, eye, center, up);
+
+    mat4x4_mul_vec4(xView, mats.view, xModel);
+    mat4x4_mul_vec4(yView, mats.view, yModel);
+    mat4x4_mul_vec4(zView, mats.view, zModel);
+
+    printf("View: {%f, %f, %f}, {%f, %f, %f}, {%f, %f, %f}\n",
+           xView[0], xView[1], xView[2], yView[0], yView[1], yView[2], zView[0], zView[1], zView[2]);
 
     float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
     mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 1000.0f);
+
+    mat4x4_mul_vec4(xProj, mats.proj, xView);
+    mat4x4_mul_vec4(yProj, mats.proj, yView);
+    mat4x4_mul_vec4(zProj, mats.proj, zView);
+
+    printf("Proj: {%f, %f, %f}, {%f, %f, %f}, {%f, %f, %f}\n",
+           xProj[0], xProj[1], xProj[2], yProj[0], yProj[1], yProj[2], zProj[0], zProj[1], zProj[2]);
 }
 
 
 
 void updateUniformBuffer(double delta)
 {
-    vec3 eye = {0.0f, 1.0f, 0.0f}, center = {0.0f, 0.0f, 0.0f}, up = {0.0f, 0.0f, 1.0f};
+    vec3 eye = {0.0f, 0.0f, -1.0f}, center = {0.0f, 0.0f, 0.0f}, up = {0.0f, 1.0f, 0.0f};
+    vec3 horiz = {1.0f, 0.0f, 0.0f};
+    quat vRot, hRot;
 
-    vec3 xAxis = {1.0f, 0.0f, 0.0f}, zAxis = {0.0f, 0.0f, 1.0f};
-    quat xRot, zRot;
-
-    quat_rotate(xRot, positions.direction[1], xAxis);
-    quat_rotate(zRot, positions.direction[0], zAxis);
-    quat_mul_vec3(eye, xRot, eye);
-    quat_mul_vec3(eye, zRot, eye);
+    quat_rotate(vRot, positions.direction[1], horiz);
+    quat_rotate(hRot, positions.direction[0], up);
+    quat_mul_vec3(eye, vRot, eye);
+    quat_mul_vec3(eye, hRot, eye);
 
     vec3_scale(eye, eye, positions.distance);
     mat4x4_look_at(mats.view, eye, center, up);
