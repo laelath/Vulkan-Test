@@ -12,8 +12,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#define TINYOBJ_LOADER_C_IMPLEMENTATION
-#include <tinyobj_loader_c.h>
+#define VMD_LOADER_IMPLEMENTATION
+#include <vmd_loader.h>
 
 #include "vktools.h"
 
@@ -130,38 +130,17 @@ struct VulkanData {
 
 
 
-struct Vertex {
+typedef struct {
     vec3 pos;
     vec2 texCoord;
     vec3 color;
-};
+} Vertex;
 
-struct Vertex *vertices;
-uint32_t      *indices;
+Vertex   *vertices;
+uint32_t *indices;
 
 size_t vertexCount;
 size_t indexCount;
-
-
-/*const struct Vertex vertices[] = {
-   // Position,             Color               Tex Coord
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{ 0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{ 0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f,  0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
-};
-const size_t vertexCount = sizeof(vertices) / sizeof(vertices[0]);
-
-const uint32_t indices[] = {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-};
-const size_t indexCount = sizeof(indices) / sizeof(indices[0]);*/
 
 
 
@@ -814,7 +793,7 @@ void createGraphicsPipeline()
     // Vertex input stuff
     VkVertexInputBindingDescription bindingDescription = {
         .binding   = 0,
-        .stride    = sizeof(struct Vertex),
+        .stride    = sizeof(Vertex),
         .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
     };
 
@@ -823,17 +802,17 @@ void createGraphicsPipeline()
             .binding  = 0,
             .location = 0,
             .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = offsetof(struct Vertex, pos)
+            .offset   = offsetof(Vertex, pos)
         }, {
             .binding  = 0,
             .location = 1,
             .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = offsetof(struct Vertex, color)
+            .offset   = offsetof(Vertex, color)
         }, {
             .binding  = 0,
             .location = 2,
             .format   = VK_FORMAT_R32G32_SFLOAT,
-            .offset   = offsetof(struct Vertex, texCoord)
+            .offset   = offsetof(Vertex, texCoord)
         }
     };
 
@@ -1263,98 +1242,38 @@ void createTextureSampler()
 void loadModel()
 {
     size_t dataLen;
-    void *data = getFileData("models/chalet.obj", &dataLen);
+    char *data = getFileData("models/chalet.vmd", &dataLen);
 
-    tinyobj_attrib_t    attrib;
-    tinyobj_shape_t    *shapes;
-    size_t              numShapes;
-    tinyobj_material_t *materials;
-    size_t              numMaterials;
+    VmdData vmd;
+    loadVmd(&vmd, data, dataLen);
 
-    unsigned int flags = TINYOBJ_FLAG_TRIANGULATE;
-    int err = tinyobj_parse_obj(&attrib, &shapes, &numShapes, &materials, &numMaterials, data, dataLen, flags);
-    if (err != TINYOBJ_SUCCESS)
-        ERR_EXIT("Unable to load model\n");
+    vertexCount = vmd.vertexCount;
+    indexCount  = vmd.indexCount;
 
-    // Initial upper bounds allocation
-    vertices = malloc(attrib.num_faces * sizeof(struct Vertex));
-    indices  = malloc(attrib.num_faces * sizeof(uint32_t));
+    vertices = malloc(vmd.vertexCount * sizeof(Vertex));
+    indices  = malloc(vmd.indexCount * sizeof(uint32_t));
 
-    struct ObjVertex {
-        uint32_t v;
-        uint32_t vt;
-    };
+    size_t vertFloats = 5; // 3 position, 2 texcoord
 
-    struct ObjVertex *objVerts = malloc(attrib.num_faces * sizeof(struct ObjVertex));
-
-    vertexCount = 0;
-    indexCount  = 0;
-
-    uint32_t maxV = 0;
-    uint32_t maxVt = 0;
-
-    // TODO: this only loads the first shape, maybe fix?
-    for (size_t i = 0; i < shapes[0].length; i++) {
-        for (size_t j = 0; j < attrib.face_num_verts[i + shapes[0].face_offset]; j++) {
-            size_t vertIdx = 3 * i + j;
-            tinyobj_vertex_index_t v = attrib.faces[vertIdx];
-
-            struct Vertex vertex = {
-                .pos = {
-                    -attrib.vertices[3 * v.v_idx + 0],
-                    attrib.vertices[3 * v.v_idx + 2],
-                    attrib.vertices[3 * v.v_idx + 1]
-                },
-                .texCoord = {
-                    attrib.texcoords[2 * v.vt_idx + 0],
-                    1.0f - attrib.texcoords[2 * v.vt_idx + 1]
-                },
-                .color = {1.0f, 1.0f, 1.0f}
-            };
-
-            bool found = false;
-            if (v.v_idx <= maxV && v.vt_idx <= maxVt) {
-                for (size_t k = vertexCount; k > 0; k--) {
-                    if (objVerts[k - 1].v == v.v_idx && objVerts[k - 1].vt == v.vt_idx) {
-                        indices[vertIdx] = k - 1;
-                        found = true;
-                        break;
-                    }
-                }
-            } else {
-                if (v.v_idx > maxV)
-                    maxV = v.v_idx;
-                if (v.vt_idx > maxVt)
-                    maxVt = v.vt_idx;
-            }
-
-            if (!found) {
-                vertices[vertexCount] = vertex;
-                objVerts[vertexCount].v = v.v_idx;
-                objVerts[vertexCount].vt = v.vt_idx;
-                indices[vertIdx]  = vertexCount;
-                vertexCount++;
-            }
-            indexCount++;
-        }
+    for (size_t i = 0; i < vmd.vertexCount; i++) {
+        size_t offset = vertFloats * i;
+        Vertex v = {
+            .pos      = {vmd.vertices[offset + 0], vmd.vertices[offset + 1], vmd.vertices[offset + 2]},
+            .texCoord = {vmd.vertices[offset + 3], vmd.vertices[offset + 4]},
+            .color    = {1.0f, 1.0f, 1.0f}
+        };
+        vertices[i] = v;
     }
 
-    printf("Vertices: %ld, Indices: %ld\n", vertexCount, indexCount);
+    memcpy(indices, vmd.indices, vmd.indexCount * sizeof(uint32_t));
 
-    free(objVerts);
-
-    vertices = realloc(vertices, vertexCount * sizeof(struct Vertex));
-
-    tinyobj_attrib_free(&attrib);
-    tinyobj_shapes_free(shapes, numShapes);
-    tinyobj_materials_free(materials, numMaterials);
-
+    vmdFree(&vmd);
     free(data);
 }
 
 void createVertexBuffer()
 {
-    VkDeviceSize bufferSize = vertexCount * sizeof(struct Vertex);
+    VkDeviceSize bufferSize = vertexCount * sizeof(Vertex);
 
     VkBuffer       stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1751,7 +1670,6 @@ void windowResizeCallback(GLFWwindow *window, int width, int height)
 {
     windowWidth = width;
     windowHeight = height;
-    //recreateSwapchain();
 }
 
 void initWindow()
@@ -1784,18 +1702,6 @@ void initMats()
     positions.distance = 4.0f;
     positions.direction[0] = -M_PI / 4.0;
     positions.direction[1] =  M_PI / 12.0;
-
-    //vec3 eye = {0.0f, 0.0f, -1.0f}, center = {0.0f, 0.0f, 0.0f}, up = {0.0f, 1.0f, 0.0f};
-    //vec3 horiz = {1.0f, 0.0f, 0.0f};
-    //quat vRot, hRot;
-
-    //quat_rotate(vRot, positions.direction[1], horiz);
-    //quat_rotate(hRot, positions.direction[0], up);
-    //quat_mul_vec3(eye, vRot, eye);
-    //quat_mul_vec3(eye, hRot, eye);
-
-    //vec3_scale(eye, eye, positions.distance);
-    //mat4x4_look_at(mats.view, eye, center, up);
 
     float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
     mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 1000.0f);
