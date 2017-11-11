@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -9,13 +10,21 @@
 #define LINMATH_VULKAN_PROJECTIONS
 #include <linmath.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+//#define STB_IMAGE_IMPLEMENTATION
+//#include <stb_image.h>
+
+#define VTD_LOADER_IMPLEMENTATION
+#include <vtd_loader.h>
 
 #define VMD_LOADER_IMPLEMENTATION
 #include <vmd_loader.h>
 
 #include "vktools.h"
+
+
+
+#define MAX_FRAMERATE   400
+#define MIN_FRAME_DELTA (0.975 / MAX_FRAMERATE)
 
 
 
@@ -1046,14 +1055,15 @@ void createFramebuffers()
 
 void createTextureImage()
 {
-    int texWidth, texHeight, texChannels;
-    stbi_uc *pixels = stbi_load("textures/steamsad_santa.png", &texWidth, &texHeight, &texChannels,
-                                STBI_rgb_alpha);
+    size_t imageDataLen;
+    char *imageData = getFileData("textures/chalet.vtd", &imageDataLen);
 
-    if (!pixels)
-        ERR_EXIT("Unable to load texture image\n");
+    VtdData image;
+    loadVtd(imageData, imageDataLen, &image);
 
-    VkDeviceSize imageSize = texWidth * texHeight * 4;
+    vtdConvert(&image, VTD_rgb_alpha);
+
+    VkDeviceSize imageSize = image.width * image.height * 4;
 
     VkBuffer       stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1063,14 +1073,14 @@ void createTextureImage()
 
     void *data;
     vkMapMemory(vkData.device, stagingBufferMemory, 0, imageSize, 0, &data);
-    memcpy(data, pixels, imageSize);
+    memcpy(data, image.pixels, imageSize);
     vkUnmapMemory(vkData.device, stagingBufferMemory);
 
-    stbi_image_free(pixels);
+    vtdFree(&image);
 
     vkData.textureMipLevels = 1;
 
-    createImage(vkData.physicalDevice, vkData.device, texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
+    createImage(vkData.physicalDevice, vkData.device, image.width, image.height, VK_FORMAT_R8G8B8A8_UNORM,
                 VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_SAMPLE_COUNT_1_BIT, vkData.textureMipLevels, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                 &vkData.textureImage, &vkData.textureImageMemory);
@@ -1088,7 +1098,7 @@ void createTextureImage()
     cmdTransitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
 
-    cmdCopyBufferToImage(commandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
+    cmdCopyBufferToImage(commandBuffer, stagingBuffer, vkData.textureImage, image.width, image.height);
 
     cmdTransitionImageLayout(commandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
@@ -1101,14 +1111,15 @@ void createTextureImage()
 
 void createTextureImageMipMapped()
 {
-    int texWidth, texHeight, texChannels;
-    stbi_uc *pixels = stbi_load("textures/chalet.jpg", &texWidth, &texHeight, &texChannels,
-                                STBI_rgb_alpha);
+    size_t imgDataLen;
+    char *imgData = getFileData("textures/chalet.vtd", &imgDataLen);
 
-    if (!pixels)
-        ERR_EXIT("Unable to load texture image\n");
+    VtdData image;
+    loadVtd(imgData, imgDataLen, &image);
 
-    VkDeviceSize imageSize = texWidth * texHeight * 4;
+    vtdConvert(&image, VTD_rgb_alpha);
+
+    VkDeviceSize imageSize = image.width * image.height * 4;
 
     VkBuffer       stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1118,14 +1129,14 @@ void createTextureImageMipMapped()
 
     void *data;
     vkMapMemory(vkData.device, stagingBufferMemory, 0, imageSize, 0, &data);
-    memcpy(data, pixels, imageSize);
+    memcpy(data, image.pixels, imageSize);
     vkUnmapMemory(vkData.device, stagingBufferMemory);
 
-    stbi_image_free(pixels);
+    vtdFree(&image);
 
-    vkData.textureMipLevels = floor(log2(texWidth > texHeight ? texWidth : texHeight)) + 1;
+    vkData.textureMipLevels = floor(log2(image.width > image.height ? image.width : image.height)) + 1;
 
-    createImage(vkData.physicalDevice, vkData.device, texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM,
+    createImage(vkData.physicalDevice, vkData.device, image.width, image.height, VK_FORMAT_R8G8B8A8_UNORM,
                 VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_SAMPLE_COUNT_1_BIT, vkData.textureMipLevels, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -1144,7 +1155,7 @@ void createTextureImageMipMapped()
     cmdTransitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
 
-    cmdCopyBufferToImage(copyCommandBuffer, stagingBuffer, vkData.textureImage, texWidth, texHeight);
+    cmdCopyBufferToImage(copyCommandBuffer, stagingBuffer, vkData.textureImage, image.width, image.height);
 
     cmdTransitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, subresourceRange);
@@ -1165,8 +1176,8 @@ void createTextureImageMipMapped()
                 .mipLevel   = i - 1
             },
             .srcOffsets[1] = {
-                .x = texWidth >> (i - 1),
-                .y = texHeight >> (i - 1),
+                .x = image.width >> (i - 1),
+                .y = image.height >> (i - 1),
                 .z = 1
             },
             .dstSubresource = {
@@ -1175,8 +1186,8 @@ void createTextureImageMipMapped()
                 .mipLevel   = i
             },
             .dstOffsets[1] = {
-                .x = texWidth >> i,
-                .y = texHeight >> i,
+                .x = image.width >> i,
+                .y = image.height >> i,
                 .z = 1
             }
         };
@@ -1485,58 +1496,95 @@ void createSemaphores()
     VK_CHECK(vkCreateSemaphore(vkData.device, &semaphoreInfo, NULL, &vkData.renderFinishedSemaphore));
 }
 
+double showTime(char *name, double prev)
+{
+    double time = glfwGetTime();
+    printf("%-30s%-15f%f\n", name, time, time - prev);
+    return time;
+}
+
 void initVulkan()
 {
+    double time = showTime("start", glfwGetTime());
+
     createInstance();
+    time = showTime("createInstance", time);
     loadInstanceFunctions();
+    time = showTime("loadInstanceFunctions", time);
 
 #ifdef VALIDATION_LAYERS
     setupDebugCallback();
+    time = showTime("setupDebugCallback", time);
 #endif // VALIDATION_LAYERS
 
     createSurface();
+    time = showTime("createSurface", time);
 
     pickPhysicalDevice();
+    time = showTime("pickPhysicalDevice", time);
     createLogicalDevice();
+    time = showTime("createLogicalDevice", time);
 
     getMultisampleCount();
+    time = showTime("getMultisampleCount", time);
 
     // Swapchain things
     createSwapchain(VK_NULL_HANDLE);
+    time = showTime("createSwapchain", time);
     createImageViews();
+    time = showTime("createImageViews", time);
     createRenderPass();
+    time = showTime("createRenderPass", time);
 
     loadShaders();
+    time = showTime("loadShaders", time);
     createDescriptorSetLayout();
+    time = showTime("createDescriptorSetLayout", time);
 
     // Swapchain things
     createGraphicsPipeline();
+    time = showTime("createGraphicsPipeline", time);
 
     createCommandPool();
+    time = showTime("createCommandPool", time);
 
     // Swapchain things
     createDepthResources();
+    time = showTime("createDepthResources", time);
     createMultisampleTarget();
+    time = showTime("createMultisampleTarget", time);
     createFramebuffers();
+    time = showTime("createFramebuffers", time);
 
     //createTextureImage();
     createTextureImageMipMapped();
+    time = showTime("createTextureImageMipMapped", time);
     createTextureImageView();
+    time = showTime("createTextureImageView", time);
     createTextureSampler();
+    time = showTime("createTextureSampler", time);
 
     loadModel();
+    time = showTime("loadModel", time);
 
     createVertexBuffer();
+    time = showTime("createVertexBuffer", time);
     createIndexBuffer();
+    time = showTime("createIndexBuffer", time);
     createUniformBuffer();
+    time = showTime("createUniformBuffer", time);
 
     createDescriptorPool();
+    time = showTime("createDescriptorPool", time);
     createDescriptorSet();
+    time = showTime("createDescriptorSet", time);
 
     // Swapchain things
     createCommandBuffers();
+    time = showTime("createCommandBuffers", time);
 
     createSemaphores();
+    time = showTime("createSemaphores", time);
 }
 
 
@@ -1782,13 +1830,34 @@ void renderFrame()
 
 void mainLoop()
 {
+    printf("\nStarting main loop...\n");
     double prevTime = glfwGetTime();
+    double lastOut = prevTime;
+    long frameCount = 0;
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
         double currTime = glfwGetTime();
         double delta = currTime - prevTime;
+
+        if (delta < MIN_FRAME_DELTA) {
+            struct timespec tv = {
+                .tv_sec = 0,
+                .tv_nsec = 1000000000 * (MIN_FRAME_DELTA - delta)
+            };
+            nanosleep(&tv, &tv);
+            currTime = glfwGetTime();
+            delta = currTime - prevTime;
+        }
+
         prevTime = currTime;
+
+        if (currTime - lastOut > 1.0) {
+            printf("Frames in last second: %d\n", frameCount);
+            frameCount = 0;
+            lastOut = currTime;
+        }
+        frameCount++;
 
         // process state stuff here if there ever is any
 
