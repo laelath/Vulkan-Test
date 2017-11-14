@@ -1643,7 +1643,7 @@ void recreateSwapchain()
 
     // TODO: Temporary update for projection matrix
     float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
-    mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 10.0f);
+    mat4x4_perspective(mats.proj, (M_PI / 2) * (9.0 / 16.0), aspect, 0.1f, 1000.0f);
     // End TODO
 
     vkQueueWaitIdle(vkData.presentQueue);
@@ -1776,7 +1776,7 @@ void initMats()
     positions.direction[1] =  M_PI / 12.0;
 
     float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
-    mat4x4_perspective(mats.proj, M_PI / 4, aspect, 0.1f, 1000.0f);
+    mat4x4_perspective(mats.proj, (M_PI / 2) * (9.0 / 16.0), aspect, 0.1f, 1000.0f);
 }
 
 
