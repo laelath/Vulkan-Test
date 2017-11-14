@@ -10,9 +10,6 @@
 #define LINMATH_VULKAN_PROJECTIONS
 #include <linmath.h>
 
-//#define STB_IMAGE_IMPLEMENTATION
-//#include <stb_image.h>
-
 #define VTD_LOADER_IMPLEMENTATION
 #include <vtd_loader.h>
 
@@ -109,25 +106,7 @@ struct VulkanData {
     VkDeviceMemory     msDepthImageMemory;
     VkImageView        msDepthImageView;
 
-    // Vertex and index buffers
-    VkBuffer       vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-    VkBuffer       indexBuffer;
-    VkDeviceMemory indexBufferMemory;
-
-    // Uniform buffer stuff
-    VkBuffer       uniformBuffer;
-    VkDeviceMemory uniformBufferMemory;
-
-    // Texture stuff
-    uint32_t       textureMipLevels;
-    VkImage        textureImage;
-    VkDeviceMemory textureImageMemory;
-    VkImageView    textureImageView;
-    VkSampler      textureSampler;
-
     VkDescriptorPool descriptorPool;
-    VkDescriptorSet  descriptorSet;
 
 #ifdef VALIDATION_LAYERS
     VkDebugReportCallbackEXT callback;
@@ -145,11 +124,38 @@ typedef struct {
     vec3 color;
 } Vertex;
 
-Vertex   *vertices;
-uint32_t *indices;
+typedef struct {
+    vec3 pos;
+    quat rot;
 
-size_t vertexCount;
-size_t indexCount;
+    size_t vertexCount;
+    size_t indexCount;
+
+    Vertex   *vertices;
+    uint32_t *indices;
+
+    // Vulkan model buffers
+    VkBuffer       vertexBuffer;
+    VkDeviceMemory vertexBufferMemory;
+    VkBuffer       indexBuffer;
+    VkDeviceMemory indexBufferMemory;
+
+    // Vulkan texture stuff
+    uint32_t       textureMipLevels;
+    VkImage        textureImage;
+    VkDeviceMemory textureImageMemory;
+    VkImageView    textureImageView;
+    VkSampler      textureSampler;
+
+    // Vulkan uniform buffer things
+    VkBuffer       uniformBuffer;
+    VkDeviceMemory uniformBufferMemory;
+
+    VkDescriptorSet descriptorSet;
+} Model;
+
+Model models[2];
+const size_t modelCount = sizeof(models) / sizeof(models[0]);
 
 
 
@@ -1000,7 +1006,6 @@ void createDepthResources()
 
     cmdTransitionImageLayout(commandBuffer, vkData.depthImage, VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, subresourceRange);
-                          //VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 }
@@ -1053,7 +1058,7 @@ void createFramebuffers()
     }
 }
 
-void createTextureImage()
+/*void createTextureImage()
 {
     size_t imageDataLen;
     char *imageData = getFileData("textures/chalet.vtd", &imageDataLen);
@@ -1107,12 +1112,14 @@ void createTextureImage()
 
     vkDestroyBuffer(vkData.device, stagingBuffer, NULL);
     vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
-}
+}*/
 
-void createTextureImageMipMapped()
+uint32_t createTextureImageMipMapped(VkImage *vkImage, VkDeviceMemory *vkImageMemory,
+                                 const char *texturePath, uint32_t reqMipLevels)
+// TODO: make mipLevels do something
 {
     size_t imgDataLen;
-    char *imgData = getFileData("textures/chalet.vtd", &imgDataLen);
+    char *imgData = getFileData(texturePath, &imgDataLen);
 
     VtdData image;
     loadVtd(imgData, imgDataLen, &image);
@@ -1134,13 +1141,13 @@ void createTextureImageMipMapped()
 
     vtdFree(&image);
 
-    vkData.textureMipLevels = floor(log2(image.width > image.height ? image.width : image.height)) + 1;
+    uint32_t mipLevels = floor(log2(image.width > image.height ? image.width : image.height)) + 1;
 
     createImage(vkData.physicalDevice, vkData.device, image.width, image.height, VK_FORMAT_R8G8B8A8_UNORM,
                 VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                VK_SAMPLE_COUNT_1_BIT, vkData.textureMipLevels, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                &vkData.textureImage, &vkData.textureImageMemory);
+                VK_SAMPLE_COUNT_1_BIT, mipLevels, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                vkImage, vkImageMemory);
 
     VkCommandBuffer copyCommandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
 
@@ -1152,12 +1159,12 @@ void createTextureImageMipMapped()
         .layerCount     = 1,
     };
 
-    cmdTransitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
+    cmdTransitionImageLayout(copyCommandBuffer, *vkImage, VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
 
-    cmdCopyBufferToImage(copyCommandBuffer, stagingBuffer, vkData.textureImage, image.width, image.height);
+    cmdCopyBufferToImage(copyCommandBuffer, stagingBuffer, *vkImage, image.width, image.height);
 
-    cmdTransitionImageLayout(copyCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    cmdTransitionImageLayout(copyCommandBuffer, *vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, subresourceRange);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, copyCommandBuffer);
@@ -1168,7 +1175,7 @@ void createTextureImageMipMapped()
     // Generate the mip chain
     VkCommandBuffer blitCommandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
 
-    for (int32_t i = 1; i < vkData.textureMipLevels; i++) {
+    for (int32_t i = 1; i < mipLevels; i++) {
         VkImageBlit imageBlit = {
             .srcSubresource = {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -1199,31 +1206,33 @@ void createTextureImageMipMapped()
             .layerCount   = 1
         };
 
-        cmdTransitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_UNDEFINED,
+        cmdTransitionImageLayout(blitCommandBuffer, *vkImage, VK_IMAGE_LAYOUT_UNDEFINED,
                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipSubRange);
 
-        vkCmdBlitImage(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        vkCmdBlitImage(blitCommandBuffer, *vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       *vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                        1, &imageBlit, VK_FILTER_LINEAR);
 
-        cmdTransitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        cmdTransitionImageLayout(blitCommandBuffer, *vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                               VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, mipSubRange);
     }
 
-    subresourceRange.levelCount = vkData.textureMipLevels;
-    cmdTransitionImageLayout(blitCommandBuffer, vkData.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    subresourceRange.levelCount = mipLevels;
+    cmdTransitionImageLayout(blitCommandBuffer, *vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, blitCommandBuffer);
+
+    return mipLevels;
 }
 
-void createTextureImageView()
+void createTextureImageView(VkImageView *imageView, VkImage image, uint32_t mipLevels)
 {
-    vkData.textureImageView = createImageView(vkData.device, vkData.textureImage, VK_FORMAT_R8G8B8A8_UNORM,
-                                              VK_IMAGE_ASPECT_COLOR_BIT, vkData.textureMipLevels);
+    *imageView = createImageView(vkData.device, image, VK_FORMAT_R8G8B8A8_UNORM,
+                                              VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 }
 
-void createTextureSampler()
+void createTextureSampler(VkSampler *sampler, uint32_t mipLevels)
 {
     VkSamplerCreateInfo samplerInfo = {
         .sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1244,25 +1253,34 @@ void createTextureSampler()
         .mipmapMode              = VK_SAMPLER_MIPMAP_MODE_LINEAR,
         .mipLodBias              = 0.0f,
         .minLod                  = 0.0f,
-        .maxLod                  = vkData.textureMipLevels
+        .maxLod                  = mipLevels
     };
 
-    VK_CHECK(vkCreateSampler(vkData.device, &samplerInfo, NULL, &vkData.textureSampler));
+    VK_CHECK(vkCreateSampler(vkData.device, &samplerInfo, NULL, sampler));
 }
 
-void loadModel()
+void loadModelTexture(Model *model, const char *texturePath, size_t mipCount)
+{
+    model->textureMipLevels = createTextureImageMipMapped(&model->textureImage, &model->textureImageMemory,
+                                                          texturePath, mipCount);
+    createTextureImageView(&model->textureImageView, model->textureImage, model->textureMipLevels);
+    createTextureSampler(&model->textureSampler, model->textureMipLevels);
+
+}
+
+void loadModelGeometry(Model *model, const char *modelPath)
 {
     size_t dataLen;
-    char *data = getFileData("models/chalet.vmd", &dataLen);
+    char *data = getFileData(modelPath, &dataLen);
 
     VmdData vmd;
     loadVmd(&vmd, data, dataLen);
 
-    vertexCount = vmd.vertexCount;
-    indexCount  = vmd.indexCount;
+    model->vertexCount = vmd.vertexCount;
+    model->indexCount  = vmd.indexCount;
 
-    vertices = malloc(vmd.vertexCount * sizeof(Vertex));
-    indices  = malloc(vmd.indexCount * sizeof(uint32_t));
+    model->vertices = malloc(vmd.vertexCount * sizeof(Vertex));
+    model->indices  = malloc(vmd.indexCount * sizeof(uint32_t));
 
     size_t vertFloats = 5; // 3 position, 2 texcoord
 
@@ -1273,18 +1291,19 @@ void loadModel()
             .texCoord = {vmd.vertices[offset + 3], vmd.vertices[offset + 4]},
             .color    = {1.0f, 1.0f, 1.0f}
         };
-        vertices[i] = v;
+        model->vertices[i] = v;
     }
 
-    memcpy(indices, vmd.indices, vmd.indexCount * sizeof(uint32_t));
+    memcpy(model->indices, vmd.indices, vmd.indexCount * sizeof(uint32_t));
 
     vmdFree(&vmd);
     free(data);
 }
 
-void createVertexBuffer()
+void createVertexBuffer(VkBuffer *vertexBuffer, VkDeviceMemory *vertexMemory,
+                        Vertex *vertices, uint32_t count)
 {
-    VkDeviceSize bufferSize = vertexCount * sizeof(Vertex);
+    VkDeviceSize bufferSize = count * sizeof(Vertex);
 
     VkBuffer       stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1300,11 +1319,11 @@ void createVertexBuffer()
     createBuffer(vkData.physicalDevice, vkData.device, bufferSize,
                  VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                 &vkData.vertexBuffer, &vkData.vertexBufferMemory);
+                 vertexBuffer, vertexMemory);
 
     VkCommandBuffer commandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
 
-    cmdCopyBuffer(commandBuffer, stagingBuffer, vkData.vertexBuffer, bufferSize);
+    cmdCopyBuffer(commandBuffer, stagingBuffer, *vertexBuffer, bufferSize);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 
@@ -1312,9 +1331,10 @@ void createVertexBuffer()
     vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
 }
 
-void createIndexBuffer()
+void createIndexBuffer(VkBuffer *indexBuffer, VkDeviceMemory *indexMemory,
+                       uint32_t *indices, uint32_t count)
 {
-    VkDeviceSize bufferSize = indexCount * sizeof(uint32_t);
+    VkDeviceSize bufferSize = count * sizeof(uint32_t);
 
     VkBuffer       stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1330,11 +1350,11 @@ void createIndexBuffer()
     createBuffer(vkData.physicalDevice, vkData.device, bufferSize,
                  VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                 &vkData.indexBuffer, &vkData.indexBufferMemory);
+                 indexBuffer, indexMemory);
 
     VkCommandBuffer commandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
 
-    cmdCopyBuffer(commandBuffer, stagingBuffer, vkData.indexBuffer, bufferSize);
+    cmdCopyBuffer(commandBuffer, stagingBuffer, *indexBuffer, bufferSize);
 
     endSingleTimeCommands(vkData.device, vkData.commandPool, vkData.graphicsQueue, commandBuffer);
 
@@ -1342,37 +1362,16 @@ void createIndexBuffer()
     vkFreeMemory(vkData.device, stagingBufferMemory, NULL);
 }
 
-void createUniformBuffer()
+void createUniformBuffer(VkBuffer *uniformBuffer, VkDeviceMemory *uniformMemory)
 {
     VkDeviceSize bufferSize = sizeof(struct VertexTransforms);
     createBuffer(vkData.physicalDevice, vkData.device, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 &vkData.uniformBuffer, &vkData.uniformBufferMemory);
+                 uniformBuffer, uniformMemory);
 }
 
-void createDescriptorPool()
-{
-    VkDescriptorPoolSize poolSizes[] = {
-        {
-            .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .descriptorCount = 1
-        }, {
-            .type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount = 1
-        }
-    };
-
-    VkDescriptorPoolCreateInfo poolInfo = {
-        .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = sizeof(poolSizes) / sizeof(poolSizes[0]),
-        .pPoolSizes    = poolSizes,
-        .maxSets       = 1
-    };
-
-    VK_CHECK(vkCreateDescriptorPool(vkData.device, &poolInfo, NULL, &vkData.descriptorPool));
-}
-
-void createDescriptorSet()
+void createDescriptorSet(VkDescriptorSet *descriptorSet, VkBuffer uniformBuffer,
+                         VkImageView imageView, VkSampler sampler)
 {
     VkDescriptorSetLayout layouts[] = {vkData.descriptorSetLayout};
 
@@ -1383,24 +1382,24 @@ void createDescriptorSet()
         .pSetLayouts        = layouts
     };
 
-    VK_CHECK(vkAllocateDescriptorSets(vkData.device, &allocInfo, &vkData.descriptorSet));
+    VK_CHECK(vkAllocateDescriptorSets(vkData.device, &allocInfo, descriptorSet));
 
     VkDescriptorBufferInfo bufferInfo = {
-        .buffer = vkData.uniformBuffer,
+        .buffer = uniformBuffer,
         .offset = 0,
         .range  = sizeof(struct VertexTransforms)
     };
 
     VkDescriptorImageInfo imageInfo = {
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        .imageView   = vkData.textureImageView,
-        .sampler     = vkData.textureSampler
+        .imageView   = imageView,
+        .sampler     = sampler
     };
 
     VkWriteDescriptorSet descriptorWrites[] = {
         {
             .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet           = vkData.descriptorSet,
+            .dstSet           = *descriptorSet,
             .dstBinding       = 0,
             .dstArrayElement  = 0,
             .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -1408,7 +1407,7 @@ void createDescriptorSet()
             .pBufferInfo      = &bufferInfo
         }, {
             .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet           = vkData.descriptorSet,
+            .dstSet           = *descriptorSet,
             .dstBinding       = 1,
             .dstArrayElement  = 0,
             .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -1419,6 +1418,39 @@ void createDescriptorSet()
 
     vkUpdateDescriptorSets(vkData.device, sizeof(descriptorWrites) / sizeof(descriptorWrites[0]),
                            descriptorWrites, 0, NULL);
+}
+
+void loadModel(Model *model, const char *modelPath, const char *texturePath, size_t mipCount)
+{
+    loadModelGeometry(model, modelPath);
+    loadModelTexture(model, texturePath, mipCount);
+    createVertexBuffer(&model->vertexBuffer, &model->vertexBufferMemory, model->vertices, model->vertexCount);
+    createIndexBuffer(&model->indexBuffer, &model->indexBufferMemory, model->indices, model->indexCount);
+    createUniformBuffer(&model->uniformBuffer, &model->uniformBufferMemory);
+    createDescriptorSet(&model->descriptorSet, model->uniformBuffer,
+                        model->textureImageView, model->textureSampler);
+}
+
+void createDescriptorPool()
+{
+    VkDescriptorPoolSize poolSizes[] = {
+        {
+            .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = modelCount
+        }, {
+            .type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = modelCount
+        }
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo = {
+        .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .poolSizeCount = sizeof(poolSizes) / sizeof(poolSizes[0]),
+        .pPoolSizes    = poolSizes,
+        .maxSets       = modelCount
+    };
+
+    VK_CHECK(vkCreateDescriptorPool(vkData.device, &poolInfo, NULL, &vkData.descriptorPool));
 }
 
 void createCommandBuffers()
@@ -1470,16 +1502,16 @@ void createCommandBuffers()
         vkCmdBindPipeline(vkData.swapchainCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                           vkData.graphicsPipeline);
 
-        VkBuffer vertexBuffers[] = {vkData.vertexBuffer};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(vkData.swapchainCommandBuffers[i], 0, 1, vertexBuffers, offsets);
+        for (size_t j = 0; j < modelCount; j++) {
+            VkBuffer vertexBuffers[] = {models[j].vertexBuffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(vkData.swapchainCommandBuffers[i], 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(vkData.swapchainCommandBuffers[i], models[j].indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindDescriptorSets(vkData.swapchainCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    vkData.pipelineLayout, 0, 1, &models[j].descriptorSet, 0, NULL);
+            vkCmdDrawIndexed(vkData.swapchainCommandBuffers[i], models[j].indexCount, 1, 0, 0, 0);
+        }
 
-        vkCmdBindIndexBuffer(vkData.swapchainCommandBuffers[i], vkData.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-        vkCmdBindDescriptorSets(vkData.swapchainCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                vkData.pipelineLayout, 0, 1, &vkData.descriptorSet, 0, NULL);
-
-        vkCmdDrawIndexed(vkData.swapchainCommandBuffers[i], indexCount, 1, 0, 0, 0);
         vkCmdEndRenderPass(vkData.swapchainCommandBuffers[i]);
 
         VK_CHECK(vkEndCommandBuffer(vkData.swapchainCommandBuffers[i]));
@@ -1556,28 +1588,14 @@ void initVulkan()
     createFramebuffers();
     time = showTime("createFramebuffers", time);
 
-    //createTextureImage();
-    createTextureImageMipMapped();
-    time = showTime("createTextureImageMipMapped", time);
-    createTextureImageView();
-    time = showTime("createTextureImageView", time);
-    createTextureSampler();
-    time = showTime("createTextureSampler", time);
-
-    loadModel();
-    time = showTime("loadModel", time);
-
-    createVertexBuffer();
-    time = showTime("createVertexBuffer", time);
-    createIndexBuffer();
-    time = showTime("createIndexBuffer", time);
-    createUniformBuffer();
-    time = showTime("createUniformBuffer", time);
-
     createDescriptorPool();
     time = showTime("createDescriptorPool", time);
-    createDescriptorSet();
-    time = showTime("createDescriptorSet", time);
+
+    loadModel(&models[0], "models/chalet.vmd", "textures/chalet.vtd", 0);
+    time = showTime("loadModel", time);
+
+    loadModel(&models[1], "models/test.vmd", "textures/steamsad_santa.vtd", 0);
+    time = showTime("loadModel", time);
 
     // Swapchain things
     createCommandBuffers();
@@ -1745,7 +1763,13 @@ void initWindow()
 
 void initMats()
 {
-    mat4x4_translate(mats.model, 0, -0.3, 0);
+    models[0].pos[0] = 0;
+    models[0].pos[1] = -0.3;
+    models[0].pos[2] = 0;
+
+    models[1].pos[0] = 0;
+    models[1].pos[1] = -1;
+    models[1].pos[2] = 0;
 
     positions.distance = 4.0f;
     positions.direction[0] = -M_PI / 4.0;
@@ -1771,12 +1795,13 @@ void updateUniformBuffer(double delta)
     vec3_scale(eye, eye, positions.distance);
     mat4x4_look_at(mats.view, eye, center, up);
 
-    //mat4x4_rotate_Z(mats.model, mats.model, delta * (2 * M_PI) / 15.0f);
-
-    void *data;
-    vkMapMemory(vkData.device, vkData.uniformBufferMemory, 0, sizeof(mats), 0, &data);
-    memcpy(data, &mats, sizeof(mats));
-    vkUnmapMemory(vkData.device, vkData.uniformBufferMemory);
+    for (size_t i = 0; i < modelCount; i++) {
+        mat4x4_translate(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
+        void *data;
+        vkMapMemory(vkData.device, models[i].uniformBufferMemory, 0, sizeof(mats), 0, &data);
+        memcpy(data, &mats, sizeof(mats));
+        vkUnmapMemory(vkData.device, models[i].uniformBufferMemory);
+    }
 }
 
 void renderFrame()
@@ -1853,11 +1878,11 @@ void mainLoop()
         prevTime = currTime;
 
         if (currTime - lastOut > 1.0) {
-            printf("Frames in last second: %d\n", frameCount);
+            printf("Frames in last second: %ld\n", frameCount);
             frameCount = 0;
             lastOut = currTime;
         }
-        frameCount++;
+        frameCount += 1;
 
         // process state stuff here if there ever is any
 
@@ -1903,26 +1928,33 @@ void cleanupSwapchain()
     vkDestroySwapchainKHR(vkData.device, vkData.swapchain, NULL);
 }
 
+void cleanupModel(Model *model)
+{
+    vkDestroySampler(vkData.device, model->textureSampler, NULL);
+    vkDestroyImageView(vkData.device, model->textureImageView, NULL);
+    vkDestroyImage(vkData.device, model->textureImage, NULL);
+    vkFreeMemory(vkData.device, model->textureImageMemory, NULL);
+
+    vkDestroyBuffer(vkData.device, model->indexBuffer, NULL);
+    vkFreeMemory(vkData.device, model->indexBufferMemory, NULL);
+
+    vkDestroyBuffer(vkData.device, model->vertexBuffer, NULL);
+    vkFreeMemory(vkData.device, model->vertexBufferMemory, NULL);
+
+    vkDestroyBuffer(vkData.device, model->uniformBuffer, NULL);
+    vkFreeMemory(vkData.device, model->uniformBufferMemory, NULL);
+}
+
 void cleanup()
 {
     cleanupSwapchain();
 
-    vkDestroySampler(vkData.device, vkData.textureSampler, NULL);
-    vkDestroyImageView(vkData.device, vkData.textureImageView, NULL);
-    vkDestroyImage(vkData.device, vkData.textureImage, NULL);
-    vkFreeMemory(vkData.device, vkData.textureImageMemory, NULL);
+    for (size_t i = 0; i < modelCount; i++)
+        cleanupModel(&models[i]);
 
     vkDestroyDescriptorPool(vkData.device, vkData.descriptorPool, NULL);
 
     vkDestroyDescriptorSetLayout(vkData.device, vkData.descriptorSetLayout, NULL);
-    vkDestroyBuffer(vkData.device, vkData.uniformBuffer, NULL);
-    vkFreeMemory(vkData.device, vkData.uniformBufferMemory, NULL);
-
-    vkDestroyBuffer(vkData.device, vkData.indexBuffer, NULL);
-    vkFreeMemory(vkData.device, vkData.indexBufferMemory, NULL);
-
-    vkDestroyBuffer(vkData.device, vkData.vertexBuffer, NULL);
-    vkFreeMemory(vkData.device, vkData.vertexBufferMemory, NULL);
 
     vkDestroyShaderModule(vkData.device, shaders.vert, NULL);
     vkDestroyShaderModule(vkData.device, shaders.frag, NULL);
