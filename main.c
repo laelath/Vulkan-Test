@@ -26,7 +26,7 @@
 #define MIP_LEVELS      0
 #define MIP_BIAS        -0.5f
 #define ANISOTROPY      16
-#define MULTISAMPLES    2
+#define MULTISAMPLES    8
 
 
 
