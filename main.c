@@ -634,120 +634,62 @@ void createImageViews()
 }
 
 void createRenderPass()
-{    // TODO: Properly find and save the depth format rather than calling this function several times
-    VkFormat depthFormat = findDepthFormat(vkData.physicalDevice);
-
-    VkAttachmentDescription attachments[] = {
-        { // Render target and present src
-            .format         = vkData.swapchainImageFormat.format,
-            .samples        = VK_SAMPLE_COUNT_1_BIT,
-            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-        }, { // Depth buffer
-            .format         = depthFormat,
-            .samples        = VK_SAMPLE_COUNT_1_BIT,
-            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-        }
-    };
-
-    VkAttachmentReference colorAttachmentRef = {
-        .attachment = 0,
-        .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-    };
-
-    VkAttachmentReference depthAttachmentRef = {
-        .attachment = 1,
-        .layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-    };
-
-    VkSubpassDescription subpass = {
-        .pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .colorAttachmentCount    = 1,
-        .pColorAttachments       = &colorAttachmentRef,
-        .pResolveAttachments     = NULL,
-        .pDepthStencilAttachment = &depthAttachmentRef
-    };
-
-    VkSubpassDependency dependency = {
-        .srcSubpass = VK_SUBPASS_EXTERNAL,
-        .dstSubpass = 0,
-        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .srcAccessMask = 0,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-    };
-
-    VkRenderPassCreateInfo renderPassInfo = {
-        .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 2,
-        .pAttachments    = attachments,
-        .subpassCount    = 1,
-        .pSubpasses      = &subpass,
-        .dependencyCount = 1,
-        .pDependencies   = &dependency
-    };
-
-    VK_CHECK(vkCreateRenderPass(vkData.device, &renderPassInfo, NULL, &vkData.renderPass));
-}
-
-void createRenderPassMultisample()
 {
-    // TODO: Properly find and save the depth format rather than calling this function several times
+    getMultisampleCount();
+    bool multisampled = vkData.samples > VK_SAMPLE_COUNT_1_BIT;
+
     VkFormat depthFormat = findDepthFormat(vkData.physicalDevice);
 
-    VkAttachmentDescription attachments[] = {
-        { // Multisample render target
-            .format         = vkData.swapchainImageFormat.format,
-            .samples        = vkData.samples,
-            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-        }, { // Image to be resolved to for presenting
-            .format         = vkData.swapchainImageFormat.format,
-            .samples        = VK_SAMPLE_COUNT_1_BIT,
-            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-        }, { // Multisampled depth buffer
-            .format         = depthFormat,
-            .samples        = vkData.samples,
-            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-        }
-    };
+    VkAttachmentDescription attachments[3] = {};
+    size_t attachmentCount = 2;
+
+    // Image for presenting
+    attachments[0].format         = vkData.swapchainImageFormat.format;
+    attachments[0].samples        = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[0].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[0].initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[0].finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    // Depth buffer
+    attachments[1].format         = depthFormat;
+    attachments[1].samples        = vkData.samples;
+    attachments[1].loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[1].storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[1].finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    if (multisampled) {
+        // Multisampled render target
+        attachments[2].format         = vkData.swapchainImageFormat.format;
+        attachments[2].samples        = vkData.samples;
+        attachments[2].loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachments[2].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+        attachments[2].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachments[2].initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+        attachments[2].finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        attachmentCount = 3;
+    }
 
     VkAttachmentReference colorAttachmentRef = {
-        .attachment = 0,
+        .attachment = multisampled ? 2 : 0,
         .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     };
 
     // For resolving the color attachment
     VkAttachmentReference resolveAttachmentRef = {
-        .attachment = 1,
-        .layout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        .attachment = 0,
+        .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     };
 
     VkAttachmentReference depthAttachmentRef = {
-        .attachment = 2,
+        .attachment = 1,
         .layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
     };
 
@@ -755,37 +697,49 @@ void createRenderPassMultisample()
         .pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount    = 1,
         .pColorAttachments       = &colorAttachmentRef,
-        .pResolveAttachments     = &resolveAttachmentRef,
+        .pResolveAttachments     = multisampled ? &resolveAttachmentRef : NULL,
         .pDepthStencilAttachment = &depthAttachmentRef
     };
 
-    VkSubpassDependency dependencies[] = {
-        {
-            .srcSubpass      = VK_SUBPASS_EXTERNAL,
-            .dstSubpass      = 0,
-            .srcStageMask    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-            .dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .srcAccessMask   = VK_ACCESS_MEMORY_READ_BIT,
-            .dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT
-        }, {
-            .srcSubpass      = 0,
-            .dstSubpass      = VK_SUBPASS_EXTERNAL,
-            .srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .dstStageMask    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-            .srcAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            .dstAccessMask   = VK_ACCESS_MEMORY_READ_BIT,
-            .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT
-        }
-    };
+    VkSubpassDependency dependencies[2] = {};
+    size_t dependencyCount = 0;
+
+    if (multisampled) {
+        dependencies[0].srcSubpass      = VK_SUBPASS_EXTERNAL;
+        dependencies[0].dstSubpass      = 0;
+        dependencies[0].srcStageMask    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        dependencies[0].dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[0].srcAccessMask   = VK_ACCESS_MEMORY_READ_BIT;
+        dependencies[0].dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+        dependencies[1].srcSubpass      = 0;
+        dependencies[1].dstSubpass      = VK_SUBPASS_EXTERNAL;
+        dependencies[1].srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[1].dstStageMask    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        dependencies[1].srcAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependencies[1].dstAccessMask   = VK_ACCESS_MEMORY_READ_BIT;
+        dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+        dependencyCount = 2;
+    } else {
+        dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependencies[0].dstSubpass = 0;
+        dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[0].srcAccessMask = 0;
+        dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        dependencyCount = 1;
+    }
 
     VkRenderPassCreateInfo renderPassInfo = {
         .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 3,
+        .attachmentCount = attachmentCount,
         .pAttachments    = attachments,
         .subpassCount    = 1,
         .pSubpasses      = &subpass,
-        .dependencyCount = 2,
+        .dependencyCount = dependencyCount,
         .pDependencies   = dependencies
     };
 
@@ -1087,43 +1041,25 @@ void createMultisampleTarget()
 
 void createFramebuffers()
 {
+    bool multisampled = vkData.samples > VK_SAMPLE_COUNT_1_BIT;
+    if (multisampled)
+        createMultisampleTarget();
+
     vkData.swapchainFramebuffers = malloc(vkData.swapchainImageCount * sizeof(VkFramebuffer));
 
-    for (size_t i = 0; i < vkData.swapchainImageCount; i++) {
-        VkImageView attachments[] = {
-            vkData.swapchainImageViews[i],
-            vkData.depthImageView
-        };
+    VkImageView attachments[] = {
+        VK_NULL_HANDLE,
+        vkData.depthImageView,
+        vkData.msImageView
+    };
+
+    for (size_t i = 0; i < vkData.swapchainImageCount; ++i) {
+        attachments[0] = vkData.swapchainImageViews[i];
 
         VkFramebufferCreateInfo framebufferInfo = {
             .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass      = vkData.renderPass,
-            .attachmentCount = 2,
-            .pAttachments    = attachments,
-            .width           = vkData.swapchainImageExtent.width,
-            .height          = vkData.swapchainImageExtent.height,
-            .layers          = 1
-        };
-
-        VK_CHECK(vkCreateFramebuffer(vkData.device, &framebufferInfo, NULL,
-                                     &vkData.swapchainFramebuffers[i]));
-    }
-}
-
-void createFramebuffersMultisample()
-{
-    vkData.swapchainFramebuffers = malloc(vkData.swapchainImageCount * sizeof(VkFramebuffer));
-
-    for (size_t i = 0; i < vkData.swapchainImageCount; i++) {
-        VkImageView attachments[] = {
-            vkData.msImageView, vkData.swapchainImageViews[i],
-            vkData.depthImageView
-        };
-
-        VkFramebufferCreateInfo framebufferInfo = {
-            .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass      = vkData.renderPass,
-            .attachmentCount = 3,
+            .attachmentCount = multisampled ? 3 : 2,
             .pAttachments    = attachments,
             .width           = vkData.swapchainImageExtent.width,
             .height          = vkData.swapchainImageExtent.height,
@@ -1312,7 +1248,6 @@ void loadModelGeometry(Model *model, const char *modelPath)
     model->vertices = malloc(vmd.vertexCount * sizeof(Vertex));
     model->indices  = malloc(vmd.indexCount * sizeof(uint32_t));
 
-    //size_t vertFloats = 5; // 3 position, 2 texcoord
     size_t vertFloats = vmdVertexComponents(&vmd);
 
     size_t texOff = 3;
@@ -1511,32 +1446,23 @@ void createCommandBuffers()
         vkBeginCommandBuffer(vkData.swapchainCommandBuffers[i], &beginInfo);
 
         VkClearValue clearValues[3];
-        size_t clearValueCount = 0;
+        size_t clearValueCount = 2;
+
+        clearValues[0].color.float32[0] = 0.0f;
+        clearValues[0].color.float32[1] = 0.0f;
+        clearValues[0].color.float32[2] = 0.0f;
+        clearValues[0].color.float32[3] = 1.0f;
+
+        clearValues[1].depthStencil.depth   = 1.0f;
+        clearValues[1].depthStencil.stencil = 0;
+
         if (vkData.samples > VK_SAMPLE_COUNT_1_BIT) {
-            clearValues[0].color.float32[0] = 0.0f;
-            clearValues[0].color.float32[1] = 0.0f;
-            clearValues[0].color.float32[2] = 0.0f;
-            clearValues[0].color.float32[3] = 1.0f;
-
-            clearValues[1].color.float32[0] = 0.0f;
-            clearValues[1].color.float32[1] = 0.0f;
-            clearValues[1].color.float32[2] = 0.0f;
-            clearValues[1].color.float32[3] = 1.0f;
-
-            clearValues[2].depthStencil.depth   = 1.0f;
-            clearValues[2].depthStencil.stencil = 0;
+            clearValues[2].color.float32[0] = 0.0f;
+            clearValues[2].color.float32[1] = 0.0f;
+            clearValues[2].color.float32[2] = 0.0f;
+            clearValues[2].color.float32[3] = 1.0f;
 
             clearValueCount = 3;
-        } else {
-            clearValues[0].color.float32[0] = 0.0f;
-            clearValues[0].color.float32[1] = 0.0f;
-            clearValues[0].color.float32[2] = 0.0f;
-            clearValues[0].color.float32[3] = 1.0f;
-
-            clearValues[1].depthStencil.depth   = 1.0f;
-            clearValues[1].depthStencil.stencil = 0;
-
-            clearValueCount = 2;
         }
 
         VkRenderPassBeginInfo renderPassInfo = {
@@ -1620,24 +1546,13 @@ void initVulkan()
     createImageViews();
     time = showTime("createImageViews", time);
 
-    // TODO: reformat this whole section so it's not stupid
-    getMultisampleCount();
-    time = showTime("getMultisampleCount", time);
+    // These three have to be called in this order
+    createRenderPass();
+    time = showTime("createRenderPass", time);
     createDepthResources();
     time = showTime("createDepthResources", time);
-    if (vkData.samples > VK_SAMPLE_COUNT_1_BIT) {
-        createRenderPassMultisample();
-        time = showTime("createRenderPassMultisample", time);
-        createMultisampleTarget();
-        time = showTime("createMultisampleTarget", time);
-        createFramebuffersMultisample();
-        time = showTime("createFramebuffersMultisample", time);
-    } else {
-        createRenderPass();
-        time = showTime("createRenderPass", time);
-        createFramebuffers();
-        time = showTime("createFramebuffers", time);
-    }
+    createFramebuffers();
+    time = showTime("createFramebuffers", time);
 
     loadShaders();
     time = showTime("loadShaders", time);
@@ -1693,16 +1608,9 @@ void recreateSwapchain()
     createSwapchain(oldSwapchain);
     createImageViews();
 
-    getMultisampleCount();
+    createRenderPass();
     createDepthResources();
-    if (vkData.samples > VK_SAMPLE_COUNT_1_BIT) {
-        createRenderPassMultisample();
-        createMultisampleTarget();
-        createFramebuffersMultisample();
-    } else {
-        createRenderPass();
-        createFramebuffers();
-    }
+    createFramebuffers();
 
     createGraphicsPipeline();
     createCommandBuffers();
