@@ -26,7 +26,7 @@
 #define MIP_LEVELS      0
 #define MIP_BIAS        -0.5f
 #define ANISOTROPY      16
-#define MULTISAMPLES    8
+#define MULTISAMPLES    2
 
 
 
@@ -127,6 +127,7 @@ typedef struct {
 } Vertex;
 
 typedef struct {
+    vec3 scale;
     vec3 pos;
     quat rot;
 
@@ -1311,13 +1312,18 @@ void loadModelGeometry(Model *model, const char *modelPath)
     model->vertices = malloc(vmd.vertexCount * sizeof(Vertex));
     model->indices  = malloc(vmd.indexCount * sizeof(uint32_t));
 
-    size_t vertFloats = 5; // 3 position, 2 texcoord
+    //size_t vertFloats = 5; // 3 position, 2 texcoord
+    size_t vertFloats = vmdVertexComponents(&vmd);
+
+    size_t texOff = 3;
+    if (vmd.vertexMask & VMD_VERTEX_NORMAL_BIT)
+        texOff += 3;
 
     for (size_t i = 0; i < vmd.vertexCount; i++) {
         size_t offset = vertFloats * i;
         Vertex v = {
             .pos      = {vmd.vertices[offset + 0], vmd.vertices[offset + 1], vmd.vertices[offset + 2]},
-            .texCoord = {vmd.vertices[offset + 3], vmd.vertices[offset + 4]},
+            .texCoord = {vmd.vertices[offset + texOff], vmd.vertices[offset + texOff + 1]},
             .color    = {1.0f, 1.0f, 1.0f}
         };
         model->vertices[i] = v;
@@ -1823,9 +1829,17 @@ void initMats()
     models[0].pos[1] = -0.3;
     models[0].pos[2] = 0;
 
+    models[0].scale[0] = 2;
+    models[0].scale[1] = 1;
+    models[0].scale[2] = 2;
+
     models[1].pos[0] = 0;
     models[1].pos[1] = -1;
     models[1].pos[2] = 0;
+
+    models[1].scale[0] = 1;
+    models[1].scale[1] = 1;
+    models[1].scale[2] = 1;
 
     positions.distance = 4.0f;
     positions.direction[0] = -M_PI / 4.0;
@@ -1852,7 +1866,10 @@ void updateUniformBuffer(double delta)
     mat4x4_look_at(mats.view, eye, center, up);
 
     for (size_t i = 0; i < modelCount; i++) {
-        mat4x4_translate(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
+        //mat4x4_translate(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
+        mat4x4_identity(mats.model);
+        mat4x4_scale_aniso(mats.model, mats.model, models[i].scale[0], models[i].scale[1], models[i].scale[2]);
+        mat4x4_translate_in_place(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
         void *data;
         vkMapMemory(vkData.device, models[i].uniformBufferMemory, 0, sizeof(mats), 0, &data);
         memcpy(data, &mats, sizeof(mats));

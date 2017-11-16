@@ -22,13 +22,18 @@ typedef struct {
 
 #ifdef VMD_LOADER_IMPLEMENTATION
 
-size_t vmdVertexSize(VmdData *model)
+size_t vmdVertexComponents(VmdData *model)
 {
     size_t floats = 3;
     if (model->vertexMask & VMD_VERTEX_NORMAL_BIT) floats += 3;
     if (model->vertexMask & VMD_VERTEX_COLOR_BIT) floats += 3;
     if (model->vertexMask & VMD_VERTEX_TEXCOORD_BIT) floats += 2;
-    return floats * sizeof(float);
+    return floats;
+}
+
+size_t vmdVertexSize(VmdData *model)
+{
+    return vmdVertexComponents(model) * sizeof(float);
 }
 
 void vmdFree(VmdData *model)
@@ -63,9 +68,54 @@ void loadVmd(VmdData *model, const char *data, size_t dataLen)
     memcpy(model->indices, data + offset, model->indexCount * sizeof(uint32_t));
 }
 
+void loadVmdt(VmdData *model, const char *data, size_t dataLen)
+{
+    char *endl = memchr(data, '\n', dataLen);
+    if (endl == NULL)
+        return;
+
+    for (size_t i = 0; i < endl - data; i++) {
+        if (data[i] == 'n')
+            model->vertexMask |= VMD_VERTEX_NORMAL_BIT;
+        else if (data[i] == 'c')
+            model->vertexMask |= VMD_VERTEX_COLOR_BIT;
+        else if (data[i] == 't')
+            model->vertexMask |= VMD_VERTEX_TEXCOORD_BIT;
+    }
+
+    char *start = endl + 1;
+    char *nextNum = start;
+
+    size_t count = 0;
+    while (*start != '\n') {
+        start = memchr(start, '\n', dataLen - (start - data)) + 1;
+        count += 1;
+    }
+
+    model->vertexCount = count;
+    model->vertices = malloc(count * vmdVertexSize(model));
+
+    for (size_t i = 0; i < count * vmdVertexComponents(model); i++)
+        model->vertices[i] = strtof(nextNum, &nextNum);
+
+    nextNum = start;
+    start += 1;
+
+    count = 0;
+    while (start - data + 1 < dataLen) {
+        start = memchr(start, '\n', dataLen - (start - data)) + 1;
+        count += 3;
+    }
+
+    model->indexCount = count;
+    model->indices = malloc(count * sizeof(uint32_t));
+
+    for (size_t i = 0; i < count; i++)
+        model->indices[i] = strtoul(nextNum, &nextNum, 10);
+}
+
 void saveVmd(const char *filename, VmdData *model)
 {
-    // TODO: saving stuff
     FILE *fp = fopen(filename, "wb");
 
     fwrite(&model->vertexMask, sizeof(char), 1, fp);
