@@ -1455,10 +1455,10 @@ void createDescriptorSet(VkDescriptorSet *descriptorSet, VkBuffer uniformBuffer,
                            descriptorWrites, 0, NULL);
 }
 
-void loadModel(Model *model, const char *modelPath, const char *texturePath, size_t mipCount)
+void loadModel(Model *model, const char *modelPath, const char *texturePath)
 {
     loadModelGeometry(model, modelPath);
-    loadModelTexture(model, texturePath, mipCount);
+    loadModelTexture(model, texturePath, MIP_LEVELS);
     createVertexBuffer(&model->vertexBuffer, &model->vertexBufferMemory, model->vertices, model->vertexCount);
     createIndexBuffer(&model->indexBuffer, &model->indexBufferMemory, model->indices, model->indexCount);
     createUniformBuffer(&model->uniformBuffer, &model->uniformBufferMemory);
@@ -1651,10 +1651,11 @@ void initVulkan()
     createDescriptorPool();
     time = showTime("createDescriptorPool", time);
 
-    loadModel(&models[0], "models/chalet.vmd", "textures/chalet.vtd", MIP_LEVELS);
+    //loadModel(&models[0], "models/chalet.vmd", "textures/chalet.vtd");
+    loadModel(&models[0], "models/dragon.vmd", "textures/Dragon_ground_color.vtd");
     time = showTime("loadModel", time);
 
-    loadModel(&models[1], "models/test.vmd", "textures/tile.vtd", MIP_LEVELS);
+    loadModel(&models[1], "models/test.vmd", "textures/tile.vtd");
     time = showTime("loadModel", time);
 
     // Swapchain things
@@ -1829,9 +1830,9 @@ void initMats()
     models[0].pos[1] = -0.3;
     models[0].pos[2] = 0;
 
-    models[0].scale[0] = 2;
-    models[0].scale[1] = 1;
-    models[0].scale[2] = 2;
+    models[0].scale[0] = 0.04;
+    models[0].scale[1] = 0.04;
+    models[0].scale[2] = 0.04;
 
     models[1].pos[0] = 0;
     models[1].pos[1] = -1;
