@@ -22,7 +22,8 @@
 
 // Changeable options
 #define MAX_FRAMERATE   400
-#define MIN_FRAME_DELTA (0.975 / MAX_FRAMERATE)
+//#define MIN_FRAME_DELTA (0.975 / MAX_FRAMERATE)
+#define MIN_FRAME_DELTA 0
 #define MIP_LEVELS      0
 #define MIP_BIAS        -0.5f
 #define ANISOTROPY      16
@@ -558,12 +559,17 @@ VkPresentModeKHR selectPresentMode()
     VkPresentModeKHR fallback = VK_PRESENT_MODE_FIFO_KHR;
 
     for (size_t i = 0; i < presentModeCount; i++) {
-        if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
+        /*if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
             fallback = presentModes[i];
             free(presentModes);
             return fallback;
         } else if (presentModes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR)
+            fallback = presentModes[i];*/
+        if (presentModes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR) {
             fallback = presentModes[i];
+            free(presentModes);
+            return fallback;
+        }
     }
 
     free(presentModes);
@@ -1735,7 +1741,7 @@ void initWindow()
 void initMats()
 {
     models[0].pos[0] = 0;
-    models[0].pos[1] = -0.3;
+    models[0].pos[1] = -0.5;
     models[0].pos[2] = 0;
 
     models[0].scale[0] = 0.04;
@@ -1776,9 +1782,13 @@ void updateUniformBuffer(double delta)
 
     for (size_t i = 0; i < modelCount; i++) {
         //mat4x4_translate(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
-        mat4x4_identity(mats.model);
-        mat4x4_scale_aniso(mats.model, mats.model, models[i].scale[0], models[i].scale[1], models[i].scale[2]);
-        mat4x4_translate_in_place(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
+        //mat4x4_identity(mats.model);
+        mat4x4 scaleMat;
+        mat4x4_identity(scaleMat);
+        mat4x4_scale_aniso(scaleMat, scaleMat, models[i].scale[0], models[i].scale[1], models[i].scale[2]);
+        mat4x4_translate(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
+        mat4x4_mul(mats.model, mats.model, scaleMat);
+        //mat4x4_translate_in_place(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
         void *data;
         vkMapMemory(vkData.device, models[i].uniformBufferMemory, 0, sizeof(mats), 0, &data);
         memcpy(data, &mats, sizeof(mats));

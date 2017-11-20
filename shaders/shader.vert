@@ -1,11 +1,15 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-layout(binding = 0) uniform Transforms {
+layout(binding = 0) uniform UBO {
     mat4 model;
     mat4 view;
     mat4 proj;
-} mats;
+} ubo;
+
+layout(binding = 1) uniform DynUBO {
+    mat4 model;
+} dynUbo;
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inColor;
@@ -19,7 +23,7 @@ out gl_PerVertex {
 };
 
 void main() {
-    gl_Position = mats.proj * mats.view * mats.model * vec4(inPosition, 1.0);
+    gl_Position = ubo.proj * ubo.view * dynUbo.model * vec4(inPosition, 1.0);
     fragColor = inColor;
     fragTexCoord = inTexCoord;
 }
