@@ -123,8 +123,9 @@ struct VulkanData {
 
 typedef struct {
     vec3 pos;
-    vec2 texCoord;
+    vec3 normal;
     vec3 color;
+    vec2 texCoord;
 } Vertex;
 
 typedef struct {
@@ -168,11 +169,16 @@ struct Positions {
     vec2  direction;
 } positions;
 
-struct VertexTransforms {
+struct UniformBufferData {
     mat4x4 model;
     mat4x4 view;
     mat4x4 proj;
-} mats;
+} ubo;
+
+struct PushConstantData {
+    vec4 dirLight;
+    vec4 dirLightColor;
+} pushConsts;
 
 
 
@@ -844,10 +850,15 @@ void createGraphicsPipeline()
             .binding  = 0,
             .location = 1,
             .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = offsetof(Vertex, color)
+            .offset   = offsetof(Vertex, normal)
         }, {
             .binding  = 0,
             .location = 2,
+            .format   = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset   = offsetof(Vertex, color)
+        }, {
+            .binding  = 0,
+            .location = 3,
             .format   = VK_FORMAT_R32G32_SFLOAT,
             .offset   = offsetof(Vertex, texCoord)
         }
@@ -954,13 +965,19 @@ void createGraphicsPipeline()
 
     // Dynamic state stuff would go here if we had any
 
-    // Pipeline layout for uniforms and stuff
+    // Pipeline layout for uniforms and push constants
+    VkPushConstantRange pushConstantRange = {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset     = 0,
+        .size       = sizeof(struct PushConstantData)
+    };
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
         .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount         = 1,
         .pSetLayouts            = &vkData.descriptorSetLayout,
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges    = NULL
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges    = &pushConstantRange
     };
 
     // Create pipeline layout
@@ -1264,8 +1281,9 @@ void loadModelGeometry(Model *model, const char *modelPath)
         size_t offset = vertFloats * i;
         Vertex v = {
             .pos      = {vmd.vertices[offset + 0], vmd.vertices[offset + 1], vmd.vertices[offset + 2]},
-            .texCoord = {vmd.vertices[offset + texOff], vmd.vertices[offset + texOff + 1]},
-            .color    = {1.0f, 1.0f, 1.0f}
+            .normal   = {vmd.vertices[offset + 3], vmd.vertices[offset + 4], vmd.vertices[offset + 5]},
+            .color    = {1.0f, 1.0f, 1.0f},
+            .texCoord = {vmd.vertices[offset + texOff], vmd.vertices[offset + texOff + 1]}
         };
         model->vertices[i] = v;
     }
@@ -1340,7 +1358,7 @@ void createIndexBuffer(VkBuffer *indexBuffer, VkDeviceMemory *indexMemory,
 
 void createUniformBuffer(VkBuffer *uniformBuffer, VkDeviceMemory *uniformMemory)
 {
-    VkDeviceSize bufferSize = sizeof(struct VertexTransforms);
+    VkDeviceSize bufferSize = sizeof(struct UniformBufferData);
     createBuffer(vkData.physicalDevice, vkData.device, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  uniformBuffer, uniformMemory);
@@ -1363,7 +1381,7 @@ void createDescriptorSet(VkDescriptorSet *descriptorSet, VkBuffer uniformBuffer,
     VkDescriptorBufferInfo bufferInfo = {
         .buffer = uniformBuffer,
         .offset = 0,
-        .range  = sizeof(struct VertexTransforms)
+        .range  = sizeof(struct UniformBufferData)
     };
 
     VkDescriptorImageInfo imageInfo = {
@@ -1485,6 +1503,22 @@ void createCommandBuffers()
 
         // Record draw commands into the command buffer
         vkCmdBeginRenderPass(vkData.swapchainCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        pushConsts.dirLight[0] = 1.0f;
+        pushConsts.dirLight[1] = 1.0f;
+        pushConsts.dirLight[2] = 1.0f;
+        pushConsts.dirLight[3] = 0.0f;
+
+        vec3_norm(pushConsts.dirLight, pushConsts.dirLight);
+
+        pushConsts.dirLightColor[0] = 1.0f;
+        pushConsts.dirLightColor[1] = 1.0f;
+        pushConsts.dirLightColor[2] = 1.0f;
+        pushConsts.dirLightColor[3] = 1.0f;
+
+        vkCmdPushConstants(vkData.swapchainCommandBuffers[i], vkData.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(struct PushConstantData), &pushConsts);
+
         vkCmdBindPipeline(vkData.swapchainCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                           vkData.graphicsPipeline);
 
@@ -1623,7 +1657,7 @@ void recreateSwapchain()
 
     // TODO: Temporary update for projection matrix
     float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
-    mat4x4_perspective(mats.proj, (M_PI / 2) * (9.0 / 16.0), aspect, 0.1f, 1000.0f);
+    mat4x4_perspective(ubo.proj, (M_PI / 2) * (9.0 / 16.0), aspect, 0.1f, 1000.0f);
     // End TODO
 
     vkQueueWaitIdle(vkData.presentQueue);
@@ -1761,7 +1795,7 @@ void initMats()
     positions.direction[1] =  M_PI / 12.0;
 
     float aspect = vkData.swapchainImageExtent.width / (float) vkData.swapchainImageExtent.height;
-    mat4x4_perspective(mats.proj, (M_PI / 2) * (9.0 / 16.0), aspect, 0.1f, 1000.0f);
+    mat4x4_perspective(ubo.proj, (M_PI / 2) * (9.0 / 16.0), aspect, 0.1f, 1000.0f);
 }
 
 
@@ -1778,7 +1812,7 @@ void updateUniformBuffer(double delta)
     quat_mul_vec3(eye, hRot, eye);
 
     vec3_scale(eye, eye, positions.distance);
-    mat4x4_look_at(mats.view, eye, center, up);
+    mat4x4_look_at(ubo.view, eye, center, up);
 
     for (size_t i = 0; i < modelCount; i++) {
         //mat4x4_translate(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
@@ -1786,12 +1820,12 @@ void updateUniformBuffer(double delta)
         mat4x4 scaleMat;
         mat4x4_identity(scaleMat);
         mat4x4_scale_aniso(scaleMat, scaleMat, models[i].scale[0], models[i].scale[1], models[i].scale[2]);
-        mat4x4_translate(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
-        mat4x4_mul(mats.model, mats.model, scaleMat);
+        mat4x4_translate(ubo.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
+        mat4x4_mul(ubo.model, ubo.model, scaleMat);
         //mat4x4_translate_in_place(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
         void *data;
-        vkMapMemory(vkData.device, models[i].uniformBufferMemory, 0, sizeof(mats), 0, &data);
-        memcpy(data, &mats, sizeof(mats));
+        vkMapMemory(vkData.device, models[i].uniformBufferMemory, 0, sizeof(struct UniformBufferData), 0, &data);
+        memcpy(data, &ubo, sizeof(struct UniformBufferData));
         vkUnmapMemory(vkData.device, models[i].uniformBufferMemory);
     }
 }
