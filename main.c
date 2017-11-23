@@ -61,6 +61,8 @@ GLFWwindow *window;
 struct ShaderCache {
     VkShaderModule vert;
     VkShaderModule frag;
+    VkShaderModule depthVert;
+    VkShaderModule depthFrag;
 } shaders;
 
 struct VulkanData {
@@ -798,6 +800,15 @@ void loadShaders()
 
     shaders.vert = createShaderModule(vertShaderCode, vertCodeLen);
     shaders.frag = createShaderModule(fragShaderCode, fragCodeLen);
+
+    free(vertShaderCode);
+    free(fragShaderCode);
+
+    vertShaderCode = getFileData("shaders/depth.vert.spv", &vertCodeLen);
+    fragShaderCode = getFileData("shaders/depth.frag.spv", &fragCodeLen);
+
+    shaders.depthVert = createShaderModule(vertShaderCode, vertCodeLen);
+    shaders.depthFrag = createShaderModule(fragShaderCode, fragCodeLen);
 
     free(vertShaderCode);
     free(fragShaderCode);
