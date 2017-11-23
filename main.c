@@ -29,6 +29,13 @@
 #define ANISOTROPY      16
 #define MULTISAMPLES    8
 
+#define SHADOW_DIM    2048
+#define SHADOW_FORMAT VK_FORMAT_D16_UNORM
+#define SHADOW_FILTER VK_FILTER_LINEAR
+
+#define DEPTH_BIAS_CONST 1.25f
+#define DEPTH_BIAS_SLOPE 1.75f
+
 
 
 #ifndef NDEBUG
@@ -110,6 +117,17 @@ struct VulkanData {
     VkImageView        msImageView;
 
     VkDescriptorPool descriptorPool;
+
+    // Shadow data
+    VkImage         shadowImage;
+    VkDeviceMemory  shadowImageMemory;
+    VkImageView     shadowImageView;
+    VkSampler       shadowSampler;
+    VkFramebuffer   shadowFramebuffer;
+    VkPipeline      shadowPipeline;
+    VkRenderPass    shadowRenderPass;
+    VkCommandBuffer shadowCommandBuffer;
+    VkSemaphore     shadowCompleteSemaphore;
 
 #ifdef VALIDATION_LAYERS
     VkDebugReportCallbackEXT callback;
@@ -1025,6 +1043,18 @@ void createShadowPipeline()
     printf("do shadow stuff\n");
 }
 
+void createShadowCommandBuffer()
+{
+    // TODO: this
+    printf("do shadow stuff\n");
+}
+
+void createShadowSemaphore()
+{
+    // TODO: this
+    printf("do shadow stuff\n");
+}
+
 void createCommandPool()
 {
     VkCommandPoolCreateInfo poolInfo = {
@@ -1628,6 +1658,10 @@ void initVulkan()
     time = showTime("createShadowFramebuffer", time);
     createShadowPipeline();
     time = showTime("createShadowPipeline", time);
+    createShadowCommandBuffer();
+    time = showTime("createShadowCommandBuffer", time);
+    createShadowSemaphore();
+    tiem = showTime("createShadowSemaphore", time);
 
     createDescriptorPool();
     time = showTime("createDescriptorPool", time);
