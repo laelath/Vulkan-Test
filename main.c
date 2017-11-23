@@ -775,8 +775,8 @@ VkShaderModule createShaderModule(char * code, size_t codeLen)
 void loadShaders()
 {
     size_t vertCodeLen, fragCodeLen;
-    char *vertShaderCode = getFileData("shaders/vert.spv", &vertCodeLen);
-    char *fragShaderCode = getFileData("shaders/frag.spv", &fragCodeLen);
+    char *vertShaderCode = getFileData("shaders/shader.vert.spv", &vertCodeLen);
+    char *fragShaderCode = getFileData("shaders/shader.frag.spv", &fragCodeLen);
 
     shaders.vert = createShaderModule(vertShaderCode, vertCodeLen);
     shaders.frag = createShaderModule(fragShaderCode, fragCodeLen);
@@ -1005,6 +1005,24 @@ void createGraphicsPipeline()
 
     VK_CHECK(vkCreateGraphicsPipelines(vkData.device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL,
                                       &vkData.graphicsPipeline));
+}
+
+void createShadowRenderPass()
+{
+    // TODO: this
+    printf("do shadow stuff\n");
+}
+
+void createShadowFramebuffer()
+{
+    // TODO: this
+    printf("do shadow stuff\n");
+}
+
+void createShadowPipeline()
+{
+    // TODO: this
+    printf("do shadow stuff\n");
 }
 
 void createCommandPool()
@@ -1602,6 +1620,14 @@ void initVulkan()
     // Swapchain things
     createGraphicsPipeline();
     time = showTime("createGraphicsPipeline", time);
+
+    // Shadow things
+    createShadowRenderPass();
+    time = showTime("createShadowRenderPass", time);
+    createShadowFramebuffer();
+    time = showTime("createShadowFramebuffer", time);
+    createShadowPipeline();
+    time = showTime("createShadowPipeline", time);
 
     createDescriptorPool();
     time = showTime("createDescriptorPool", time);
