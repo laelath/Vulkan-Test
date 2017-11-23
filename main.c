@@ -1661,7 +1661,7 @@ void initVulkan()
     createShadowCommandBuffer();
     time = showTime("createShadowCommandBuffer", time);
     createShadowSemaphore();
-    tiem = showTime("createShadowSemaphore", time);
+    time = showTime("createShadowSemaphore", time);
 
     createDescriptorPool();
     time = showTime("createDescriptorPool", time);
