@@ -121,15 +121,16 @@ struct VulkanData {
     VkDescriptorPool descriptorPool;
 
     // Shadow data
-    VkImage         shadowImage;
-    VkDeviceMemory  shadowImageMemory;
-    VkImageView     shadowImageView;
-    VkSampler       shadowSampler;
-    VkFramebuffer   shadowFramebuffer;
-    VkPipeline      shadowPipeline;
-    VkRenderPass    shadowRenderPass;
-    VkCommandBuffer shadowCommandBuffer;
-    VkSemaphore     shadowCompleteSemaphore;
+    VkImage          shadowImage;
+    VkDeviceMemory   shadowImageMemory;
+    VkImageView      shadowImageView;
+    VkSampler        shadowSampler;
+    VkFramebuffer    shadowFramebuffer;
+    VkPipelineLayout shadowPipelineLayout;
+    VkPipeline       shadowPipeline;
+    VkRenderPass     shadowRenderPass;
+    VkCommandBuffer  shadowCommandBuffer;
+    VkSemaphore      shadowCompleteSemaphore;
 
 #ifdef VALIDATION_LAYERS
     VkDebugReportCallbackEXT callback;
@@ -1038,20 +1039,260 @@ void createGraphicsPipeline()
 
 void createShadowRenderPass()
 {
-    // TODO: this
-    printf("do shadow stuff\n");
+    VkAttachmentDescription depthAttachment = {
+        .format         = SHADOW_FORMAT,
+        .samples        = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+    };
+
+    VkAttachmentReference depthAttachmentRef = {
+        .attachment = 0,
+        .layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    };
+
+    VkSubpassDescription subpass = {
+        .pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount    = 0,
+        .pDepthStencilAttachment = &depthAttachmentRef
+    };
+
+    VkSubpassDependency dependencies[] = {
+        {
+            .srcSubpass      = VK_SUBPASS_EXTERNAL,
+            .dstSubpass      = 0,
+            .srcStageMask    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            .dstStageMask    = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            .srcAccessMask   = VK_ACCESS_SHADER_READ_BIT,
+            .dstAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT
+        }, {
+            .srcSubpass      = 0,
+            .dstSubpass      = VK_SUBPASS_EXTERNAL,
+            .srcStageMask    = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            .dstStageMask    = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            .srcAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask   = VK_ACCESS_SHADER_READ_BIT,
+            .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT
+        }
+    };
+
+    VkRenderPassCreateInfo renderPassInfo = {
+        .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments    = &depthAttachment,
+        .subpassCount    = 1,
+        .pSubpasses      = &subpass,
+        .dependencyCount = 2,
+        .pDependencies   = dependencies
+    };
+
+    VK_CHECK(vkCreateRenderPass(vkData.device, &renderPassInfo, NULL, &vkData.shadowRenderPass));
 }
 
 void createShadowFramebuffer()
 {
-    // TODO: this
-    printf("do shadow stuff\n");
+    createImage(vkData.physicalDevice, vkData.device, SHADOW_DIM, SHADOW_DIM,
+                SHADOW_FORMAT, VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_SAMPLE_COUNT_1_BIT, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                &vkData.shadowImage, &vkData.shadowImageMemory);
+
+    vkData.shadowImageView = createImageView(vkData.device, vkData.shadowImage, SHADOW_FORMAT,
+                                             VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+
+    VkSamplerCreateInfo samplerInfo = {
+        .sType         = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter     = SHADOW_FILTER,
+        .minFilter     = SHADOW_FILTER,
+        .mipmapMode    = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU  = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV  = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW  = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .mipLodBias    = 0.0f,
+        .maxAnisotropy = 1.0f,
+        .minLod        = 0.0f,
+        .maxLod        = 1.0f,
+        .borderColor   = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+    };
+
+    VK_CHECK(vkCreateSampler(vkData.device, &samplerInfo, NULL, &vkData.shadowSampler));
+
+    VkFramebufferCreateInfo shadowFramebufferInfo = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = vkData.shadowRenderPass,
+        .attachmentCount = 1,
+        .pAttachments = &vkData.shadowImageView,
+        .width = SHADOW_DIM,
+        .height = SHADOW_DIM,
+        .layers = 1
+    };
+
+    VK_CHECK(vkCreateFramebuffer(vkData.device, &shadowFramebufferInfo, NULL, &vkData.shadowFramebuffer));
 }
 
 void createShadowPipeline()
 {
-    // TODO: this
-    printf("do shadow stuff\n");
+    // Shader stuff
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {
+        .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage  = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = shaders.depthVert,
+        .pName  = "main"
+    };
+
+    /*VkPipelineShaderStageCreateInfo fragShaderStageInfo = {
+        .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage  = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = shaders.depthFrag,
+        .pName  = "main"
+    };
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};*/
+
+    // Vertex input stuff
+    VkVertexInputBindingDescription bindingDescription = {
+        .binding   = 0,
+        .stride    = sizeof(Vertex),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+    };
+
+    VkVertexInputAttributeDescription attributeDescriptions[] = {
+        {
+            .binding  = 0,
+            .location = 0,
+            .format   = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset   = offsetof(Vertex, pos)
+        }
+    };
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
+        .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount   = 1,
+        .pVertexBindingDescriptions      = &bindingDescription,
+        .vertexAttributeDescriptionCount = sizeof(attributeDescriptions) / sizeof(attributeDescriptions[0]),
+        .pVertexAttributeDescriptions    = attributeDescriptions
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .primitiveRestartEnable = VK_FALSE
+    };
+
+    // Viewport stuff
+    VkViewport viewport = {
+        .x        = 0.0f,
+        .y        = 0.0f,
+        .width    = (float) SHADOW_DIM,
+        .height   = (float) SHADOW_DIM,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
+
+    VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = {
+            .width  = SHADOW_DIM,
+            .height = SHADOW_DIM
+        }
+    };
+
+    VkPipelineViewportStateCreateInfo viewportState = {
+        .sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .pViewports    = &viewport,
+        .scissorCount  = 1,
+        .pScissors     = &scissor
+    };
+
+    // Rasterizer stuff
+    VkPipelineRasterizationStateCreateInfo rasterizer = {
+        .sType                   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .depthClampEnable        = VK_FALSE,
+        .rasterizerDiscardEnable = VK_FALSE,
+        .polygonMode             = VK_POLYGON_MODE_FILL,
+        .lineWidth               = 1.0f,
+        .cullMode                = VK_CULL_MODE_BACK_BIT,
+        .frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .depthBiasEnable         = VK_TRUE,
+        .depthBiasConstantFactor = 0.0f, // Optional
+        .depthBiasClamp          = 0.0f, // Optional
+        .depthBiasSlopeFactor    = 0.0f // Optional
+    };
+
+    // Multisample stuff
+    VkPipelineMultisampleStateCreateInfo multisampling = {
+        .sType                 = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .sampleShadingEnable   = VK_FALSE,
+        .rasterizationSamples  = VK_SAMPLE_COUNT_1_BIT,
+        .minSampleShading      = 1.0f, // Optional
+        .pSampleMask           = NULL, // Optional
+        .alphaToCoverageEnable = VK_FALSE, // Optional
+        .alphaToOneEnable      = VK_FALSE // Optional
+    };
+
+    // Depth stuff
+    VkPipelineDepthStencilStateCreateInfo depthStencil = {
+        .sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable       = VK_TRUE,
+        .depthWriteEnable      = VK_TRUE,
+        .depthCompareOp        = VK_COMPARE_OP_LESS,
+        .depthBoundsTestEnable = VK_FALSE,
+        .minDepthBounds        = 0.0f, // Optional
+        .maxDepthBounds        = 1.0f, // Optional
+        .stencilTestEnable     = VK_FALSE,
+        .front                 = {},
+        .back                  = {}
+    };
+
+    // Color blending/transparency stuff
+    VkPipelineColorBlendStateCreateInfo colorBlending = {
+        .sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable   = VK_FALSE,
+        .logicOp         = VK_LOGIC_OP_COPY, // Optional
+        .attachmentCount = 0,
+        .pAttachments    = NULL,
+        .blendConstants  = { 0.0f, 0.0f, 0.0f, 0.0f } // Optional
+    };
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount         = 1,
+        .pSetLayouts            = &vkData.descriptorSetLayout,
+        .pushConstantRangeCount = 0,
+        .pPushConstantRanges    = NULL
+    };
+
+    // Create pipeline layout
+    VK_CHECK(vkCreatePipelineLayout(vkData.device, &pipelineLayoutInfo, NULL, &vkData.shadowPipelineLayout));
+
+    // Graphics pipeline creation info
+    VkGraphicsPipelineCreateInfo pipelineInfo = {
+        .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount          = 1,
+        .pStages             = &vertShaderStageInfo,
+        .pVertexInputState   = &vertexInputInfo,
+        .pInputAssemblyState = &inputAssembly,
+        .pViewportState      = &viewportState,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState   = &multisampling,
+        .pDepthStencilState  = &depthStencil,
+        .pColorBlendState    = &colorBlending,
+        .pDynamicState       = NULL,
+        .layout              = vkData.shadowPipelineLayout,
+        .renderPass          = vkData.shadowRenderPass,
+        .subpass             = 0,
+        .basePipelineHandle  = VK_NULL_HANDLE, // Optional
+        .basePipelineIndex   = -1 // Optional
+    };
+
+    VK_CHECK(vkCreateGraphicsPipelines(vkData.device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL,
+                                      &vkData.shadowPipeline));
 }
 
 void createShadowCommandBuffer()
@@ -1062,8 +1303,11 @@ void createShadowCommandBuffer()
 
 void createShadowSemaphore()
 {
-    // TODO: this
-    printf("do shadow stuff\n");
+    VkSemaphoreCreateInfo semaphoreInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+    };
+
+    VK_CHECK(vkCreateSemaphore(vkData.device, &semaphoreInfo, NULL, &vkData.shadowCompleteSemaphore));
 }
 
 void createCommandPool()
@@ -2039,12 +2283,33 @@ void cleanupModel(Model *model)
     vkFreeMemory(vkData.device, model->uniformBufferMemory, NULL);
 }
 
+void cleanupShadows()
+{
+    vkDestroyPipelineLayout(vkData.device, vkData.shadowPipelineLayout, NULL);
+    vkDestroyPipeline(vkData.device, vkData.shadowPipeline, NULL);
+
+    vkDestroyFramebuffer(vkData.device, vkData.shadowFramebuffer, NULL);
+    vkDestroySampler(vkData.device, vkData.shadowSampler, NULL);
+    vkDestroyImageView(vkData.device, vkData.shadowImageView, NULL);
+    vkDestroyImage(vkData.device, vkData.shadowImage, NULL);
+    vkFreeMemory(vkData.device, vkData.shadowImageMemory, NULL);
+
+    vkDestroyShaderModule(vkData.device, shaders.depthVert, NULL);
+    vkDestroyShaderModule(vkData.device, shaders.depthFrag, NULL);
+
+    vkDestroySemaphore(vkData.device, vkData.shadowCompleteSemaphore, NULL);
+
+    vkDestroyRenderPass(vkData.device, vkData.shadowRenderPass, NULL);
+}
+
 void cleanup()
 {
     cleanupSwapchain();
 
     for (size_t i = 0; i < modelCount; i++)
         cleanupModel(&models[i]);
+
+    cleanupShadows();
 
     vkDestroyDescriptorPool(vkData.device, vkData.descriptorPool, NULL);
 
