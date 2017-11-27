@@ -220,7 +220,7 @@ bool checkValidationLayerSupport()
     VkLayerProperties *availableLayers = malloc(availableLayerCount * sizeof(VkLayerProperties));
     vkEnumerateInstanceLayerProperties(&availableLayerCount, availableLayers);
 
-    for (size_t i = 0; i < layerCount; i++) {
+    for (size_t i = 0; i < layerCount; ++i) {
         bool layerFound = false;
 
         for (size_t j = 0; j < availableLayerCount; j++) {
@@ -267,7 +267,7 @@ void createInstance()
 
     extensions = malloc(extensionCount * sizeof(char*));
 
-    for (size_t i = 0; i < glfwExtensionCount; i++)
+    for (size_t i = 0; i < glfwExtensionCount; ++i)
         extensions[i] = glfwExtensions[i];
 
 #ifdef VALIDATION_LAYERS
@@ -351,7 +351,7 @@ void pickPhysicalDevice()
 
     vkData.physicalDevice = VK_NULL_HANDLE;
 
-    for (size_t i = 0; i < deviceCount; i++) {
+    for (size_t i = 0; i < deviceCount; ++i) {
         // Ensure the physical device supports the required features
         // Currently this is just anisotropy if it's enabled
         VkPhysicalDeviceFeatures supportedFeatures;
@@ -412,7 +412,7 @@ void pickPhysicalDevice()
 
         bool foundMissing = false;
 
-        for (size_t i = 0; i < deviceExtensionCount; i++) {
+        for (size_t i = 0; i < deviceExtensionCount; ++i) {
             bool found = false;
             for (size_t j = 0; j < extensionCount; j++) {
                 if (strcmp(deviceExtensions[i], availableExtensions[j].extensionName) == 0) {
@@ -557,7 +557,7 @@ VkSurfaceFormatKHR selectSurfaceFormat()
         return format;
     }
 
-    for (size_t i = 0; i < formatCount; i++) {
+    for (size_t i = 0; i < formatCount; ++i) {
         if (formats[i].format == VK_FORMAT_B8G8R8A8_UNORM
           && formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             VkSurfaceFormatKHR format = {
@@ -585,7 +585,7 @@ VkPresentModeKHR selectPresentMode()
 
     VkPresentModeKHR fallback = VK_PRESENT_MODE_FIFO_KHR;
 
-    for (size_t i = 0; i < presentModeCount; i++) {
+    for (size_t i = 0; i < presentModeCount; ++i) {
         /*if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
             fallback = presentModes[i];
             free(presentModes);
@@ -659,7 +659,7 @@ void createImageViews()
 {
     vkData.swapchainImageViews = malloc(vkData.swapchainImageCount * sizeof(VkImageView));
 
-    for (size_t i = 0; i < vkData.swapchainImageCount; i++) {
+    for (size_t i = 0; i < vkData.swapchainImageCount; ++i) {
         vkData.swapchainImageViews[i] = createImageView(vkData.device, vkData.swapchainImages[i],
                                                         vkData.swapchainImageFormat.format,
                                                         VK_IMAGE_ASPECT_COLOR_BIT, 1);
@@ -1297,8 +1297,42 @@ void createShadowPipeline()
 
 void createShadowCommandBuffer()
 {
-    // TODO: this
-    printf("do shadow stuff\n");
+    VkCommandBufferAllocateInfo allocInfo = {
+        .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool        = vkData.commandPool,
+        .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+
+    VK_CHECK(vkAllocateCommandBuffers(vkData.device, &allocInfo, &vkData.shadowCommandBuffer));
+
+    VkCommandBufferBeginInfo beginInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
+    };
+
+    vkBeginCommandBuffer(vkData.shadowCommandBuffer, &beginInfo);
+
+    VkClearValue clearValue = {
+        .depthStencil = { 1.0f, 0 }
+    };
+
+    VkRenderPassBeginInfo renderPassInfo = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = vkData.shadowRenderPass,
+        .framebuffer = vkData.shadowFramebuffer,
+        .renderArea = {
+            .offset = {0, 0},
+            .extent = {SHADOW_DIM, SHADOW_DIM}
+        },
+        .clearValueCount = 1,
+        .pClearValues    = &clearValue
+    };
+
+    printf("begin render pass, record draw commands\n");
+    // TODO: that ^
+
+    VK_CHECK(vkEndCommandBuffer(vkData.shadowCommandBuffer));
 }
 
 void createShadowSemaphore()
@@ -1469,7 +1503,7 @@ uint32_t createTextureImage(VkImage *vkImage, VkDeviceMemory *vkImageMemory,
         // Generate the mip chain
         VkCommandBuffer blitCommandBuffer = beginSingleTimeCommands(vkData.device, vkData.commandPool);
 
-        for (int32_t i = 1; i < mipLevels; i++) {
+        for (int32_t i = 1; i < mipLevels; ++i) {
             VkImageBlit imageBlit = {
                 .srcSubresource = {
                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -1580,7 +1614,7 @@ void loadModelGeometry(Model *model, const char *modelPath)
     if (vmd.vertexMask & VMD_VERTEX_NORMAL_BIT)
         texOff += 3;
 
-    for (size_t i = 0; i < vmd.vertexCount; i++) {
+    for (size_t i = 0; i < vmd.vertexCount; ++i) {
         size_t offset = vertFloats * i;
         Vertex v = {
             .pos      = {vmd.vertices[offset + 0], vmd.vertices[offset + 1], vmd.vertices[offset + 2]},
@@ -1763,11 +1797,10 @@ void createCommandBuffers()
 
     VK_CHECK(vkAllocateCommandBuffers(vkData.device, &allocInfo, vkData.swapchainCommandBuffers));
 
-    for (size_t i = 0; i < vkData.swapchainImageCount; i++) {
+    for (size_t i = 0; i < vkData.swapchainImageCount; ++i) {
         VkCommandBufferBeginInfo beginInfo = {
-            .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags            = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
-            .pInheritanceInfo = NULL // Optional
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
         };
 
         vkBeginCommandBuffer(vkData.swapchainCommandBuffers[i], &beginInfo);
@@ -1993,7 +2026,7 @@ void recreateSwapchain()
     vkDestroyPipelineLayout(vkData.device, oldPipelineLayout, NULL);
     vkDestroyRenderPass(vkData.device, oldRenderPass, NULL);
 
-    for (size_t i = 0; i < oldImageCount; i++) {
+    for (size_t i = 0; i < oldImageCount; ++i) {
         vkDestroyFramebuffer(vkData.device, oldFramebuffers[i], NULL);
         vkDestroyImageView(vkData.device, oldImageViews[i], NULL);
     }
@@ -2129,7 +2162,7 @@ void updateUniformBuffer(double delta)
     vec3_scale(eye, eye, positions.distance);
     mat4x4_look_at(ubo.view, eye, center, up);
 
-    for (size_t i = 0; i < modelCount; i++) {
+    for (size_t i = 0; i < modelCount; ++i) {
         //mat4x4_translate(mats.model, models[i].pos[0], models[i].pos[1], models[i].pos[2]);
         //mat4x4_identity(mats.model);
         mat4x4 scaleMat;
@@ -2254,7 +2287,7 @@ void cleanupSwapchain()
     vkDestroyPipelineLayout(vkData.device, vkData.pipelineLayout, NULL);
     vkDestroyRenderPass(vkData.device, vkData.renderPass, NULL);
 
-    for (size_t i = 0; i < vkData.swapchainImageCount; i++) {
+    for (size_t i = 0; i < vkData.swapchainImageCount; ++i) {
         vkDestroyFramebuffer(vkData.device, vkData.swapchainFramebuffers[i], NULL);
         vkDestroyImageView(vkData.device, vkData.swapchainImageViews[i], NULL);
     }
@@ -2285,6 +2318,8 @@ void cleanupModel(Model *model)
 
 void cleanupShadows()
 {
+    vkFreeCommandBuffers(vkData.device, vkData.commandPool, 1, &vkData.shadowCommandBuffer);
+
     vkDestroyPipelineLayout(vkData.device, vkData.shadowPipelineLayout, NULL);
     vkDestroyPipeline(vkData.device, vkData.shadowPipeline, NULL);
 
@@ -2306,7 +2341,7 @@ void cleanup()
 {
     cleanupSwapchain();
 
-    for (size_t i = 0; i < modelCount; i++)
+    for (size_t i = 0; i < modelCount; ++i)
         cleanupModel(&models[i]);
 
     cleanupShadows();
